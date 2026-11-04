@@ -44,7 +44,7 @@ this v2 is a port of it to Netlify. Same formulas, same keyword lists, same Clau
   (so a fresh unzip updates the same site) or creates one; asks for ADMIN_PASSWORD once (Reset-Password.command forces it),
   creates KEYS_SECRET once; then `netlify deploy --prod`.
 - The user's live site: https://sentiment-barometer-1wtsbo.netlify.app (first deployed 2026-11-04).
-- **Buy/Sell (built 2026-11-04, NOT yet deployed or tested against real Zerodha):** Zerodha requires a registered static IP
+- **Buy/Sell (built + deployed 2026-11-04; relay set up and tested; no real order placed yet):** Zerodha requires a registered static IP
   for API orders (SEBI, from 1 Apr 2026); Netlify has none. So: page (`public/trade.mjs`, Buy/Sell under the price search,
   admin only, review + confirm step) -> `/api/admin/order` (`lib/orders.mjs`: NSE/BSE only, limits max_qty/max_value from the
   "Order relay (Firebase)" provider card, MARKET value checked with Kite /quote/ltp, 3 s double-click lock, last 50 orders
@@ -54,6 +54,14 @@ this v2 is a port of it to Netlify. Same formulas, same keyword lists, same Clau
   (run in Google Cloud Shell) creates everything idempotently and prints Static IP / Relay URL / Relay secret.
   MARKET orders send market_protection=-1 (exchange rule for API market orders). Cost estimate unverified (NAT gateway +
   static IP; sources disagree, roughly ₹600 to ₹2,700/month): user should set a budget alert and check the first bill.
+  SET UP 2026-11-04: Google Cloud project `sentiment-berometer` (new, separate from the user's old `fnv-business-app`;
+  billing = Google free trial, ~₹28.6k credit, 38 days left on 2026-11-04 -> user must Upgrade before it ends or the relay stops).
+  Static IP 34.14.135.137 (setup.sh check confirmed relay egress = this IP); Relay URL https://kite-relay-fm3odurdfq-el.a.run.app.
+  IP added in Kite developer console -> Profile -> IP Whitelist (account level, max 2 IPs, 1 change/week).
+  The first relay secret was shown in a chat screenshot; user was told to rotate it with
+  `gcloud run services update kite-relay --region asia-south1 --update-env-vars RELAY_SECRET=...`.
+  Relay URL + secret saved on the live site; Test connection OK (user, 2026-11-04). First real order not yet tried
+  (planned: 1-share LIMIT order next market day after Login with Zerodha).
 
 ## Seen on the live site (user screenshot, 2026-11-04)
 - Site loads. "Not updated yet" (hourly collect had not run yet). Price search: "Yahoo answered 429" (Yahoo rate-limits
