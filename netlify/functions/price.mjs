@@ -8,4 +8,4 @@ export default async (req) => handlePrice(req, {
   cache: getStore("cache"),
 });
 
-export const config = { path: ["/api/price", "/api/search", "/api/chain"] };
+export const config = { path: ["/api/price", "/api/search", "/api/chain", "/api/candles"] };

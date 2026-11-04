@@ -88,6 +88,11 @@ runAll and dashboardData use it, so only listed stocks are collected hourly. Adm
 fresh dashboard data. UI: × on each tile (admin only), "+ Dashboard mein add karein" under a share/index quote.
 Old articles are kept on remove (re-adding brings them back). /api/data cache lowered to 60 s.
 
+Live issue 2026-11-05: pressing × gave a bare "Error 401" (no JSON error) and the card stayed. Our handlers always send
+{error:"..."} with 401, and an earlier GET /api/admin/status (which never returns 401) also showed a bare 401 once, fixed
+by a hard refresh -> something in front of the function (or a stale session) answers 401. Pending fix (not pushed yet):
+dashboard/keys fetches read text, show the raw reply in the message, and on 401 hide admin buttons + ask to Logout/Login.
+
 ## Index options / F&O (2026-11-05)
 `lib/options.mjs`: daily NFO list (Kite /instruments/NFO, 9 s timeout, Blobs cache `kite-nfo-v1`, also pre-warmed by the
 hourly collect when Zerodha is logged in) filtered to BANKNIFTY/NIFTY/FINNIFTY/MIDCPNIFTY CE/PE, expired contracts hidden.
@@ -100,6 +105,19 @@ qty = lots x lot_size from the NFO list; SELL only up to the net quantity held (
 Relay accepts exchange NFO with NRML/MIS (shares still CNC/MIS). THE DEPLOYED RELAY MUST BE UPDATED for NFO orders:
 Cloud Shell `cd sentiment-barometer && git pull && bash relay/setup.sh` (keeps the current secret). Zerodha account needs
 the F&O segment active. Tested offline (44 unit tests) + browser suites with a fake Kite/relay; NOT yet against real Kite NFO.
+
+## Live chart page (2026-11-05)
+"Launch chart" link in the Quote panel header opens public/chart.html?sym=&name=&tf= in a new tab (public/chartpage.mjs).
+Library: TradingView Lightweight Charts 4.2.3, vendored at public/vendor/ (Apache-2.0, LICENSE copied, attribution kept).
+History: GET /api/candles?sym=&interval=minute|3minute|5minute|10minute|15minute|30minute|60minute|day (Kite historical,
+returns instrument_token + prevClose; Yahoo fallback for shares/indices; options Zerodha only). Live: admin-only GET
+/api/admin/ticker gives {api_key, access_token}; the browser opens wss://ws.kite.trade, subscribes in "quote" mode and
+public/kiteticks.mjs parses the binary packets (big-endian, paise/100; 8=ltp, 28/32=index, 44+=quote). Ticks update the
+running candle; 1s/5s/10s/30s candles exist only from ticks since the page opened (Kite has no second history).
+Not admin or no Zerodha login -> "Delayed · 20s refresh" polling of /api/candles. Studies: Volume, SMA 20, EMA 50, VWAP
+(intraday, resets per IST day), Bollinger 20,2; types Candles/Hollow/Line/Area; crosshair OHLCV legend; fit; full screen;
+theme shared with the site. Chart times are shifted +5:30 so the axis shows India time. `?wsurl=` test hook works on
+localhost only. Tested with a fake Kite WebSocket (binary packets) + 52 unit tests; NOT yet against the real ws.kite.trade.
 
 ## Seen on the live site (user screenshot, 2026-11-04)
 - Site loads. "Not updated yet" (hourly collect had not run yet). Price search: "Yahoo answered 429" (Yahoo rate-limits

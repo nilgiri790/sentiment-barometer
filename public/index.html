@@ -117,6 +117,9 @@ input,select{font:inherit;color:var(--ink)}
 .ac .it mark{background:none;color:var(--accent);font-weight:700}
 .ac .msg{padding:10px;font-size:12px;color:var(--muted)}
 .p-opt{background:var(--accent-soft);color:var(--accent)}
+.launch{height:28px;padding:0 10px;font-size:12px;gap:6px}
+.launch svg{width:14px;height:14px}
+.launch[hidden]{display:none}
 .optline{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:var(--text-2)}
 .modal.chain-modal{max-width:920px}
 .chain td,.chain th{white-space:nowrap}
@@ -338,7 +341,7 @@ html.theming *,html.theming *::before{transition:none !important}
 <div class="wrap" id="view-dash">
   <div class="dash">
     <section class="panel quote">
-      <div class="panel-h"><h2>Quote</h2><span class="right label">Live price search</span></div>
+      <div class="panel-h"><h2>Quote</h2><span class="right"><span class="label" id="qlabel">Live price search</span><a class="btn2 launch" id="qlaunch" target="_blank" rel="noopener" hidden title="Naye page mein live chart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>Launch chart</a></span></div>
       <div class="panel-b">
         <form class="search" id="sform"><div class="in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="q" placeholder="Search: ITC, Bank Nifty, banknifty 52000 ce" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-controls="ac" aria-expanded="false"><div class="ac" id="ac" role="listbox" hidden></div></div><button>Search</button></form>
         <div id="sres"><div class="note">Kisi bhi NSE/BSE stock ka daam, chart aur Buy/Sell yahan.</div></div>
@@ -383,8 +386,15 @@ let DATA, cur, days = 3, isAdmin = false;
 function refreshAdmin(){ tradingState(true).then(st => { const a = !!st?.loggedIn; if (a !== isAdmin) { isAdmin = a; if (DATA && !$("view-dash").hidden) render(); } }); }
 function toast(msg){ const t = document.createElement("div"); t.className = "toast2"; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 3500); }
 async function watch(body){
-  const r = await fetch("/api/admin/watch", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || ("Error " + r.status));
+  const r = await fetch("/api/admin/watch", { method: "POST", credentials: "same-origin", cache: "no-store",
+    headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const txt = await r.text(); let d = {}; try { d = JSON.parse(txt); } catch {}
+  if (r.status === 401) {                 // session gone: hide admin buttons and say what to do
+    isAdmin = false; if (DATA) render();
+    throw new Error((d.error || "Login session nahi mila (401).") + " API Keys mein Logout → Login karke dobara try kariye."
+      + (!d.error && txt ? ` [${txt.replace(/\s+/g, " ").slice(0, 80)}]` : ""));
+  }
+  if (!r.ok) throw new Error(d.error || (`Error ${r.status}` + (txt ? ` [${txt.replace(/\s+/g, " ").slice(0, 80)}]` : "")));
   DATA = d.data; if (!DATA.stocks[cur]) cur = Object.keys(DATA.stocks)[0]; render(); return d;
 }
 async function removeStock(k){
@@ -662,6 +672,9 @@ async function showPrice(){
     qIn.value = name; openQuote([{ symbol: sym, name, exchange: "NFO", option: true }], sym); } });
   mountTrade(box, p);
   mountAdd(box, p);
+  const nm = p.option ? p.option.name : p.symbol.replace(/\.(NS|BO)$/i, "");
+  $("qlaunch").href = `chart.html?sym=${encodeURIComponent(p.symbol)}&name=${encodeURIComponent(nm)}`;
+  $("qlaunch").hidden = false; $("qlabel").hidden = true;
 }
 </script>
 </body>

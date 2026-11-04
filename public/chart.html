@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Live Chart · Sentiment Barometer</title>
+<meta name="color-scheme" content="dark light">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%230b0f17'/><path d='M6 22l6-7 5 4 9-11' stroke='%234c8dff' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>try { const t = localStorage.getItem("sb-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}</script>
+<style>
+:root,:root[data-theme="dark"]{--bg:#0a0e15;--surface:#10151f;--surface-2:#141b27;--raise:#19212f;--hover:#1c2534;--line:#1f2836;--line-2:#2a3445;--ink:#e7ebf2;--text-2:#a3adbd;--muted:#7d8799;--pos:#22b07d;--neg:#ef5350;--accent:#4c8dff;--warn:#e5a93b;--pos-soft:rgba(34,176,125,.13);--neg-soft:rgba(239,83,80,.13);--accent-soft:rgba(76,141,255,.14);--warn-bg:rgba(229,169,59,.12);--warn-ink:#e5b45a;--grid:rgba(125,135,153,.08)}
+:root[data-theme="light"]{--bg:#f3f5f9;--surface:#fff;--surface-2:#f7f9fc;--raise:#fff;--hover:#f1f4f9;--line:#e3e7ee;--line-2:#d4dae4;--ink:#0e1625;--text-2:#465163;--muted:#6b7586;--pos:#0c9a62;--neg:#d6363a;--accent:#2563eb;--warn:#b7791f;--pos-soft:rgba(12,154,98,.10);--neg-soft:rgba(214,54,58,.09);--accent-soft:rgba(37,99,235,.09);--warn-bg:rgba(183,121,31,.10);--warn-ink:#8a5a12;--grid:rgba(107,117,134,.10)}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 13px/1.45 "Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased;display:flex;flex-direction:column}
+a{color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.tnum{font-variant-numeric:tabular-nums}
+header{display:flex;align-items:center;gap:14px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--surface);flex-wrap:wrap}
+.back{display:inline-flex;align-items:center;gap:6px;color:var(--text-2);text-decoration:none;font-weight:500}
+.back:hover{color:var(--ink)}
+.title{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;min-width:0}
+.title h1{margin:0;font-size:16px;font-weight:600;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ltp{font-size:18px;font-weight:600;font-variant-numeric:tabular-nums}
+.chg{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+.up{color:var(--pos)}.down{color:var(--neg)}
+.right{margin-left:auto;display:flex;gap:8px;align-items:center}
+.chip{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 9px;border:1px solid var(--line);border-radius:4px;font-size:12px;color:var(--text-2);white-space:nowrap}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+.dot.live{background:var(--pos);box-shadow:0 0 0 3px var(--pos-soft);animation:pulse 1.6s ease-in-out infinite}
+.dot.warn{background:var(--warn)}
+@keyframes pulse{50%{box-shadow:0 0 0 5px transparent}}
+.icon-btn{width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line-2);border-radius:4px;background:transparent;color:var(--text-2);cursor:pointer}
+.icon-btn:hover{background:var(--hover);color:var(--ink)}
+.icon-btn svg{width:16px;height:16px}
+.toolbar{display:flex;align-items:center;gap:8px;padding:8px 16px;border-bottom:1px solid var(--line);background:var(--surface);overflow-x:auto;scrollbar-width:none}
+.toolbar::-webkit-scrollbar{display:none}
+.seg{display:inline-flex;padding:2px;gap:2px;border:1px solid var(--line-2);border-radius:4px;background:var(--surface-2);flex:none}
+.seg button{height:26px;padding:0 9px;border:0;border-radius:3px;background:transparent;color:var(--text-2);font-weight:600;font-size:12px;font-family:inherit;cursor:pointer;white-space:nowrap}
+.seg button:hover{color:var(--ink)}
+.seg button.on{background:var(--raise);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.25),0 0 0 1px var(--line-2)}
+.seg button.live::after{content:"";display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--pos);margin-left:4px;vertical-align:2px}
+.sep{width:1px;height:20px;background:var(--line);flex:none}
+.lbl{font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);flex:none}
+.ind{height:28px;padding:0 9px;border:1px solid var(--line-2);border-radius:4px;background:transparent;color:var(--text-2);font-weight:600;font-size:12px;font-family:inherit;cursor:pointer;flex:none;white-space:nowrap}
+.ind.on{border-color:var(--accent);color:var(--ink);background:var(--accent-soft)}
+.ind i{display:inline-block;width:8px;height:2px;margin-right:5px;vertical-align:3px;border-radius:1px}
+main{position:relative;flex:1;min-height:320px}
+#chart{position:absolute;inset:0}
+.legend{position:absolute;left:12px;top:10px;z-index:3;pointer-events:none;font-size:12px;font-variant-numeric:tabular-nums;display:flex;gap:10px;flex-wrap:wrap;color:var(--text-2);background:color-mix(in srgb,var(--bg) 70%,transparent);padding:3px 6px;border-radius:4px}
+.legend b{color:var(--ink);font-weight:600}
+.overlay{position:absolute;inset:0;z-index:4;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;color:var(--muted);pointer-events:none}
+.overlay div{max-width:420px;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:16px 18px;pointer-events:auto}
+.overlay b{display:block;color:var(--ink);margin-bottom:4px}
+.overlay[hidden]{display:none}
+footer{padding:6px 16px;border-top:1px solid var(--line);color:var(--muted);font-size:11px;display:flex;gap:12px;justify-content:space-between;flex-wrap:wrap;background:var(--surface)}
+@media(max-width:700px){header{padding:8px 12px;gap:8px}.toolbar{padding:8px 12px}.ltp{font-size:16px}.hide-m{display:none}}
+</style>
+</head>
+<body>
+<header>
+  <a class="back" href="./#/" title="Dashboard"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg><span class="hide-m">Dashboard</span></a>
+  <div class="title"><h1 id="name">Chart</h1><span class="ltp" id="ltp">–</span><span class="chg" id="chg"></span></div>
+  <div class="right">
+    <span class="chip" id="status"><i class="dot" id="sdot"></i><span id="stext">Connecting…</span></span>
+    <button class="icon-btn" id="fs" title="Full screen" aria-label="Full screen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+    <button class="icon-btn" id="theme" title="Light / dark" aria-label="Light / dark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg></button>
+  </div>
+</header>
+<div class="toolbar" role="toolbar" aria-label="Chart controls">
+  <div class="seg" id="tf"></div>
+  <span class="sep"></span>
+  <div class="seg" id="ctype"><button data-t="candle" class="on" title="Candles">Candles</button><button data-t="hollow" title="Hollow candles">Hollow</button><button data-t="line" title="Line">Line</button><button data-t="area" title="Area">Area</button></div>
+  <span class="sep"></span>
+  <span class="lbl">Studies</span>
+  <button class="ind on" data-i="vol"><i style="background:var(--muted)"></i>Volume</button>
+  <button class="ind" data-i="sma"><i style="background:#e5a93b"></i>SMA 20</button>
+  <button class="ind" data-i="ema"><i style="background:#c084fc"></i>EMA 50</button>
+  <button class="ind" data-i="vwap"><i style="background:#22d3ee"></i>VWAP</button>
+  <button class="ind" data-i="bb"><i style="background:#94a3b8"></i>Bollinger 20,2</button>
+  <span class="sep"></span>
+  <button class="ind" id="fit" title="Poora data dikhaiye">Fit</button>
+</div>
+<main>
+  <div id="chart"></div>
+  <div class="legend" id="legend"></div>
+  <div class="overlay" id="overlay" hidden><div id="otext"></div></div>
+</main>
+<footer><span id="foot">Prices: Zerodha. Not investment advice.</span><span>Charts by <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts</a> (Apache-2.0)</span></footer>
+<script type="module" src="./chartpage.mjs"></script>
+</body>
+</html>

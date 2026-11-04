@@ -18,8 +18,8 @@ const HEAD = `<div class="page-head"><div><h1>API Keys &amp; Connections</h1>`;
 async function api(path, body) {
   const r = await fetch("/api/admin/" + path, body === undefined ? {} : {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok) throw Object.assign(new Error(d.error || `Error ${r.status}`), { status: r.status });
+  const txt = await r.text(); let d = {}; try { d = JSON.parse(txt); } catch {}
+  if (!r.ok) throw Object.assign(new Error(d.error || `Error ${r.status}` + (txt ? ` [${txt.replace(/\s+/g, " ").slice(0, 80)}]` : "")), { status: r.status });
   return d;
 }
 function toast(msg) {
