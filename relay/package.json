@@ -1,0 +1,7 @@
+{
+  "name": "kite-order-relay",
+  "private": true,
+  "type": "module",
+  "engines": { "node": "22" },
+  "scripts": { "start": "node server.mjs" }
+}

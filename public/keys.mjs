@@ -82,9 +82,14 @@ async function keysPage(data) {
     <div class="card kcard" style="margin-top:14px"><div class="khead"><h3>⚡ News abhi collect karein</h3></div>
       <p class="kp">Har ghante ye apne aap hota hai. Naya key save karne ke baad ya pehli baar, yahan se turant chala sakte hain (10 second tak lagenge).</p>
       <button class="btn" id="run">Run now</button><div class="runres" id="runres"></div></div>
+    <div class="card kcard"><div class="khead"><h3>📒 Haal ke orders (website se)</h3></div><div id="olog" class="runres">Loading…</div></div>
     ${groups.map((g) => `<div class="kgroup">${esc(g)}</div>${data.providers.filter((p) => p.group === g).map(card).join("")}`).join("")}`;
   root.querySelector("#logout").onclick = async () => { await api("logout", {}).catch(() => {}); loginForm(); };
   root.querySelector("#run").onclick = runNow;
+  api("orders").then((d) => {
+    const el = root.querySelector("#olog"); if (!el) return;
+    el.innerHTML = d.orders.length ? d.orders.slice(0, 15).map((o) => `${o.ok ? "✓" : "✗"} ${new Date(o.at).toLocaleString("en-IN")} · ${esc(o.order.transaction_type || o.order.side || "")} ${esc(o.order.quantity ?? o.order.qty ?? "")} × ${esc(o.order.tradingsymbol || o.order.symbol || "")}${o.value ? ` · ₹${Number(o.value).toLocaleString("en-IN")}` : ""} · ${o.ok ? "Order ID " + esc(o.order_id) : esc(o.error)}`).join("<br>") : "Abhi tak koi order nahi.";
+  }).catch(() => {});
   root.querySelectorAll("[data-act]").forEach((b) => (b.onclick = () => act(b)));
 }
 

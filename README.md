@@ -39,6 +39,24 @@ Dobara deploy ki zaroorat nahi padti. **Key kabhi chat mein paste mat karna**, s
 
 Keys Netlify par encrypt (taala-band) karke rakhi jaati hain. Page par poori key dobara kabhi nahi dikhti.
 
+## 🛒 Buy/Sell (Zerodha, Firebase relay ke through)
+
+SEBI ke niyam se (1 April 2026) Zerodha sirf **registered static IP** se aaye API order leta hai. Netlify ka IP badalta rehta hai,
+isliye order aapke Firebase/Google Cloud project ke ek chhote "relay" se jaate hain jiska IP pakka hai.
+
+**Ek baar ka setup:**
+1. https://console.cloud.google.com kholiye, upar apna **Firebase project** chuniye, phir upar-daayein **>_ (Cloud Shell)** dabaiye.
+2. Neeche khule terminal mein ye paste karke Enter:
+   `git clone https://github.com/nilgiri790/sentiment-barometer && bash sentiment-barometer/relay/setup.sh`
+3. Aakhir mein teen cheezein dikhengi: **Static IP**, **Relay URL**, **Relay secret**. (Secret kisi ko mat bhejiye.)
+4. Zerodha developer console → apni app → **Static IP** mein wo IP daaliye.
+5. Website → 🔑 Manage API Keys → **Order relay (Firebase)** card mein Relay URL + secret Save → **Test connection**.
+6. Google Cloud → Billing → **Budgets & alerts** mein ₹1000 ka alert laga dijiye (kharcha dekhte rehne ke liye).
+
+**Order dena:** dashboard → Live price search → stock → **Buy/Sell** (sirf admin login ke baad dikhta hai) → quantity/daam →
+**Review order** → **Haan, order bhejo**. Har order se pehle confirm screen aati hai. Limits (default: max 10 shares, max ₹25,000
+ek order mein) Order relay card mein badal sakte hain. Order ka status (executed/rejected) Kite app ke Orders mein dekhiye.
+
 ## GitHub se automatic update (zip ki zaroorat nahi)
 
 Ek baar GitHub se jodne ke baad: GitHub par naya code aate hi Netlify khud tests chalata hai aur website update kar deta hai.

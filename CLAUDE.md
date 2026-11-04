@@ -44,6 +44,16 @@ this v2 is a port of it to Netlify. Same formulas, same keyword lists, same Clau
   (so a fresh unzip updates the same site) or creates one; asks for ADMIN_PASSWORD once (Reset-Password.command forces it),
   creates KEYS_SECRET once; then `netlify deploy --prod`.
 - The user's live site: https://sentiment-barometer-1wtsbo.netlify.app (first deployed 2026-11-04).
+- **Buy/Sell (built 2026-11-04, NOT yet deployed or tested against real Zerodha):** Zerodha requires a registered static IP
+  for API orders (SEBI, from 1 Apr 2026); Netlify has none. So: page (`public/trade.mjs`, Buy/Sell under the price search,
+  admin only, review + confirm step) -> `/api/admin/order` (`lib/orders.mjs`: NSE/BSE only, limits max_qty/max_value from the
+  "Order relay (Firebase)" provider card, MARKET value checked with Kite /quote/ltp, 3 s double-click lock, last 50 orders
+  logged in Blobs admin `orders`) -> HMAC-signed (RELAY_SECRET, 60 s expiry) POST to the relay -> Kite /orders/regular.
+  Relay = `relay/` (Cloud Run service `kite-relay`, asia-south1, Node 22, no deps, max 1 instance) in the user's paid Firebase
+  project, Direct VPC egress (all traffic) -> Cloud NAT `kite-relay-nat` with static IP `kite-relay-ip`. `relay/setup.sh`
+  (run in Google Cloud Shell) creates everything idempotently and prints Static IP / Relay URL / Relay secret.
+  MARKET orders send market_protection=-1 (exchange rule for API market orders). Cost estimate unverified (NAT gateway +
+  static IP; sources disagree, roughly ₹600 to ₹2,700/month): user should set a budget alert and check the first bill.
 
 ## Seen on the live site (user screenshot, 2026-11-04)
 - Site loads. "Not updated yet" (hourly collect had not run yet). Price search: "Yahoo answered 429" (Yahoo rate-limits
@@ -67,17 +77,23 @@ Netlify plan numbers (300 credits/month free, deploy ~15 credits, compute per GB
 Never ask the user to paste keys in chat. All service keys go in the site's 🔑 Manage API Keys page.
 VERIFIED LIVE 2026-11-04: keys page setup works after the env-var fix; Kite keys saved, Login with Zerodha + token exchange
 worked, Test connection = "Zerodha connected (Anuj)". NOT tested for real yet: YouTube/Reddit tests, Claude /v1/models test.
-User has the paid Connect plan. Zerodha price source BUILT 2026-11-04 (offline tests with fake Kite responses + browser check);
-NOT yet verified against real Kite quote/historical/instruments endpoints.
+User has the paid Connect plan. Zerodha price source VERIFIED LIVE 2026-11-04 (ITC.NS search + 1 day chart, "Prices: Zerodha
+(real-time)"). Claude scoring VERIFIED LIVE (user saved the Anthropic key; dashboard shows "Scoring: Claude (claude-haiku-5-5)").
 
 ## Roadmap
 - Add the Anthropic key (more accurate). Maybe: live WebSocket ticks from Kite; morning reminder to log in to Zerodha.
 - More sources as fetchers returning {title, source, url, published}: NSE/BSE announcements, Reddit, YouTube, then worldwide.
 - After 2-4 weeks of data, check whether sentiment moves come before price moves.
-- GitHub + Netlify auto-deploy: being set up 2026-11-04. Local git repo prepared (branch main). netlify.toml runs `npm test`
-  as the build command (failing tests block the deploy) with NPM_FLAGS=--omit=dev. Once the repo is attached, push to main =
-  production deploy; tell the user before pushing. Env vars (ADMIN_PASSWORD, KEYS_SECRET) and Blobs stay on the same site.
+- GitHub + Netlify auto-deploy SET UP 2026-11-04: repo https://github.com/nilgiri790/sentiment-barometer (PUBLIC, because
+  Netlify's free plan only builds private-repo commits from one contributor, and that contributor is a different GitHub user,
+  tknj98tpn2-jpg). Netlify site linked to branch main; build command `npm test` (failing tests block the deploy),
+  NPM_FLAGS=--omit=dev. Never commit secrets: the repo is public. Deploy.command remains as a manual backup only.
+  Future sessions: start Claude Code with this repo selected.
 
 ## Working with the user
 Do the work yourself; give short numbered steps for what only they can do (logins, clicks in Netlify).
-Show a preview before big changes. Do not deploy or push to their account without saying what will happen first.
+Show a preview before big changes.
+**PUSH RULE (user's explicit instruction, 2026-11-04):** collect ALL changes and push to GitHub ONLY when the user says
+"code GitHub ko bhejo" (send code to GitHub). Every push to main = one Netlify production deploy = credits.
+Until then keep changes uncommitted in the working tree (a session stop hook nags about unpushed commits; do not push for it).
+When the user asks to send: commit everything in one commit, run `npm test`, push once, then ask them to check Netlify Deploys.
