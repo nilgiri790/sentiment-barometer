@@ -265,7 +265,7 @@ async function showPrice(){
   let p;
   try { const r = await fetch(`/api/price?sym=${encodeURIComponent(pick)}&range=${span}&t=${Date.now() / 60000 | 0}`); p = await r.json(); if (!r.ok) throw new Error(p.error || r.status); }
   catch (e) { box.innerHTML = `<div class="note">${esc(pick)} ka price nahi mila (${esc(e.message)}). List se koi aur match try karein.</div>`; return; }
-  const up = p.last >= p.points[0][1], chg = p.prevClose ? p.last - p.prevClose : null;
+  const up = p.prevClose ? p.last >= p.prevClose : p.last >= p.points[0][1], chg = p.prevClose ? p.last - p.prevClose : null;
   const W=640,H=220,L=8,R=8,T=10,B=10, vs=p.points.map(x=>x[1]), mn=Math.min(...vs), mx=Math.max(...vs), rg=(mx-mn)||1;
   const pts = p.points.map((x,i)=>`${L+i*(W-L-R)/Math.max(1,p.points.length-1)},${T+(H-T-B)*(1-(x[1]-mn)/rg)}`).join(" ");
   box.innerHTML = `<div class="metrics">
