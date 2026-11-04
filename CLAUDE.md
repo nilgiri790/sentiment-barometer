@@ -63,6 +63,17 @@ this v2 is a port of it to Netlify. Same formulas, same keyword lists, same Clau
   Relay URL + secret saved on the live site; Test connection OK (user, 2026-11-04). First real order not yet tried
   (planned: 1-share LIMIT order next market day after Login with Zerodha).
 
+## UI redesign (2026-11-05, presentation only)
+"Premium fintech terminal" look requested by the user. Only public/index.html (CSS + markup templates), public/keys.mjs
+(markup) and public/trade.mjs (order ticket markup) changed; no server/lib/function, endpoint, ID or data-* hook changed.
+Design tokens on :root (dark default, light via topbar toggle saved in localStorage `sb-theme`; old var names kept as aliases),
+Inter font (Google Fonts), topbar (title, update/engine chips, look-back, theme), sidebar with SVG icons -> bottom tab bar
+on mobile, dashboard grid with sticky Quote panel on the right (>=1180px), tiles with a score meter, gauge + stats panel,
+chart with gridlines + hover tooltips (data-tip), quote chart with area fill, prev-close line and crosshair, sticky-header
+tables, skeletons, order ticket (side toggle, segmented order type/product, live value, Escape closes, review -> confirm;
+success still only on server ok). Holdings/positions/watchlist/P&L/indices do NOT exist and were not added.
+Checked with a 44-step Playwright regression against the real handlers (fake Kite/relay) + 31 unit tests.
+
 ## Seen on the live site (user screenshot, 2026-11-04)
 - Site loads. "Not updated yet" (hourly collect had not run yet). Price search: "Yahoo answered 429" (Yahoo rate-limits
   Netlify's servers). Added a retry on query2.finance.yahoo.com; may still fail -> real fix is the Zerodha price source.

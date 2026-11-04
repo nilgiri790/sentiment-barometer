@@ -1,4 +1,5 @@
 // Buy/Sell window. Only for the logged-in admin. Real orders: always a review + confirm step first.
+// The order is sent ONLY by send() -> POST /api/admin/order, and success is shown ONLY when the server says ok.
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const inr = (v) => "₹" + Number(v).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 let stCache = null, stAt = 0;
@@ -11,71 +12,113 @@ export async function tradingState(force = false) {
 
 // Adds Buy/Sell buttons (or a note why not) under a price box. p = /api/price result.
 export async function mountTrade(box, p) {
-  const el = document.createElement("div"); el.className = "kbtns"; box.appendChild(el);
-  if (!/\.(NS|BO)$/i.test(p.symbol)) return;               // only Indian stocks can be traded via Zerodha
+  const el = document.createElement("div"); el.className = "kbtns trade"; box.appendChild(el);
+  if (!/\.(NS|BO)$/i.test(p.symbol)) { el.remove(); return; }    // only Indian stocks can be traded via Zerodha
   const st = await tradingState();
-  if (!st.loggedIn) { el.innerHTML = `<span class="note" style="margin:0">Buy/Sell ke liye <a href="#/keys">🔑 Manage API Keys</a> mein login kariye.</span>`; return; }
+  const why = (html) => { el.innerHTML = `<div class="note" style="grid-column:1/-1;margin:0">${html}</div>`; };
+  if (!st.loggedIn) return why(`Buy/Sell ke liye <a href="#/keys">API Keys</a> mein login kariye.`);
   const t = st.trading || {};
-  if (!t.relay) { el.innerHTML = `<span class="note" style="margin:0">Buy/Sell: pehle <a href="#/keys">Order relay (Firebase)</a> setup kariye.</span>`; return; }
-  if (!t.kite) { el.innerHTML = `<span class="note" style="margin:0">Buy/Sell: aaj <a href="#/keys">Login with Zerodha</a> nahi hua.</span>`; return; }
-  el.innerHTML = `<button class="btn" style="background:var(--pos)" data-s="BUY">Buy</button><button class="btn" style="background:var(--neg)" data-s="SELL">Sell</button>`;
+  if (!t.relay) return why(`Buy/Sell: pehle <a href="#/keys">Order relay (Firebase)</a> setup kariye.`);
+  if (!t.kite) return why(`Buy/Sell: aaj <a href="#/keys">Login with Zerodha</a> nahi hua.`);
+  el.innerHTML = `<button class="btn btn-buy" data-s="BUY">Buy</button><button class="btn btn-sell" data-s="SELL">Sell</button>`;
   el.querySelectorAll("button").forEach((b) => (b.onclick = () => openTrade(p, b.dataset.s, t.limits)));
 }
 
+const ICON_OK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>`;
+const ICON_BAD = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M7 7l10 10M17 7L7 17"/></svg>`;
+
 function openTrade(p, side, limits) {
   const ov = document.createElement("div"); ov.className = "modal-bg";
-  ov.innerHTML = `<div class="card modal" role="dialog" aria-modal="true"></div>`;
+  ov.innerHTML = `<div class="card modal" role="dialog" aria-modal="true" aria-label="Order"></div>`;
   document.body.appendChild(ov);
-  const m = ov.querySelector(".modal"), close = () => ov.remove();
+  const m = ov.querySelector(".modal");
+  let sending = false;
+  const close = () => { if (sending) return; ov.remove(); document.removeEventListener("keydown", onKey); };
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  document.addEventListener("keydown", onKey);
   ov.onclick = (e) => { if (e.target === ov) close(); };
   const s = { side, qty: 1, order_type: "LIMIT", price: p.last, product: "CNC" };
-
-  const form = () => {
+  const sideCol = () => (s.side === "BUY" ? "var(--pos)" : "var(--neg)");
+  const exch = /\.BO$/i.test(p.symbol) ? "BSE" : "NSE";
+  const head = (title) => `<div class="ticket-h" style="--side:${sideCol()}"><div><div class="ttl">${title}</div>
+      <div class="ltp">${esc(p.symbol)} · ${exch} · LTP ${inr(p.last)}</div></div><button class="icon-btn x" data-x aria-label="Close">${ICON_BAD}</button></div>`;
+  const calc = () => {
     const px = s.order_type === "MARKET" ? p.last : Number(s.price) || 0, val = px * (Number(s.qty) || 0);
     const over = (Number(s.qty) || 0) > limits.max_qty || val > limits.max_value;
-    m.innerHTML = `
-      <div class="khead" style="justify-content:space-between"><h3>${esc(p.symbol)} · abhi ${inr(p.last)}</h3><button class="btn2" data-x>✕</button></div>
-      <div class="seg" style="margin:8px 0 12px">${["BUY", "SELL"].map((x) => `<button type="button" data-side="${x}" class="${s.side === x ? "on" : ""}">${x === "BUY" ? "Buy" : "Sell"}</button>`).join("")}</div>
-      <div class="kfields">
-        <label>Quantity (shares)<input type="number" min="1" step="1" max="${limits.max_qty}" data-k="qty" value="${esc(s.qty)}"></label>
-        <label>Order type<select data-k="order_type"><option value="LIMIT"${s.order_type === "LIMIT" ? " selected" : ""}>Limit (aapka daam)</option><option value="MARKET"${s.order_type === "MARKET" ? " selected" : ""}>Market (abhi ke daam par)</option></select></label>
-        <label>Price (₹)<input type="number" step="0.05" min="0" data-k="price" value="${esc(s.price)}" ${s.order_type === "MARKET" ? "disabled" : ""}></label>
-        <label>Product<select data-k="product"><option value="CNC"${s.product === "CNC" ? " selected" : ""}>Delivery (CNC)</option><option value="MIS"${s.product === "MIS" ? " selected" : ""}>Intraday (MIS)</option></select></label>
+    const invalid = over || !(Number(s.qty) >= 1) || (s.order_type === "LIMIT" && !(Number(s.price) > 0));
+    return { px, val, over, invalid };
+  };
+
+  const form = () => {
+    const c = calc();
+    m.innerHTML = `${head(`${s.side === "BUY" ? "Buy" : "Sell"} ${esc(p.symbol.replace(/\.(NS|BO)$/i, ""))}`)}
+      <div class="ticket-b">
+        <div class="side-toggle">${["BUY", "SELL"].map((x) => `<button type="button" data-side="${x}" class="${s.side === x ? "on" : ""}">${x === "BUY" ? "Buy" : "Sell"}</button>`).join("")}</div>
+        <div class="tf">
+          <label>Quantity<input class="field" type="number" inputmode="numeric" min="1" step="1" max="${limits.max_qty}" data-k="qty" value="${esc(s.qty)}"></label>
+          <label>Price (₹)<input class="field" type="number" inputmode="decimal" step="0.05" min="0" data-k="price" value="${esc(s.price)}" ${s.order_type === "MARKET" ? "disabled" : ""}></label>
+          <label class="full">Order type<div class="seg">${[["LIMIT", "Limit"], ["MARKET", "Market"]].map(([v, l]) => `<button type="button" data-ot="${v}" class="${s.order_type === v ? "on" : ""}">${l}</button>`).join("")}</div></label>
+          <label class="full">Product<div class="seg">${[["CNC", "Delivery (CNC)"], ["MIS", "Intraday (MIS)"]].map(([v, l]) => `<button type="button" data-pr="${v}" class="${s.product === v ? "on" : ""}">${l}</button>`).join("")}</div></label>
+        </div>
+        <div class="sumrow"><span>Approx. value<br><span data-lim>Limit: ${limits.max_qty} shares · ${inr(limits.max_value)}</span></span><b data-val>${inr(c.val)}</b></div>
+        <div data-over>${c.over ? `<div class="kres bad">Ye order aapki limit se bada hai. Limit API Keys → Order relay mein badal sakte hain.</div>` : ""}</div>
       </div>
-      <p class="kp" style="margin-top:12px">Andaazan rakam: <b>${inr(val)}</b> · Limits: max ${limits.max_qty} shares, max ${inr(limits.max_value)}</p>
-      ${over ? `<div class="kres bad">Ye order aapki limit se bada hai. Limit Manage API Keys → Order relay mein badal sakte hain.</div>` : ""}
-      <div class="kbtns"><button class="btn" data-review ${over || !(Number(s.qty) >= 1) || (s.order_type === "LIMIT" && !(Number(s.price) > 0)) ? "disabled" : ""}>Review order</button><button class="btn2" data-x>Cancel</button></div>`;
+      <div class="ticket-f"><button class="btn2" data-x style="flex:0 0 auto">Cancel</button>
+        <button class="btn" data-review style="background:${sideCol()}" ${c.invalid ? "disabled" : ""}>Review ${s.side === "BUY" ? "buy" : "sell"}</button></div>`;
     m.querySelectorAll("[data-x]").forEach((b) => (b.onclick = close));
     m.querySelectorAll("[data-side]").forEach((b) => (b.onclick = () => { s.side = b.dataset.side; form(); }));
-    m.querySelectorAll("[data-k]").forEach((i) => (i.onchange = () => { s[i.dataset.k] = i.value; form(); }));
+    m.querySelectorAll("[data-ot]").forEach((b) => (b.onclick = () => { s.order_type = b.dataset.ot; form(); }));
+    m.querySelectorAll("[data-pr]").forEach((b) => (b.onclick = () => { s.product = b.dataset.pr; form(); }));
+    // typing updates the summary live without re-drawing (keeps the cursor in the box)
+    m.querySelectorAll("[data-k]").forEach((i) => (i.oninput = () => {
+      s[i.dataset.k] = i.value; const c2 = calc();
+      m.querySelector("[data-val]").textContent = inr(c2.val);
+      m.querySelector("[data-over]").innerHTML = c2.over ? `<div class="kres bad">Ye order aapki limit se bada hai. Limit API Keys → Order relay mein badal sakte hain.</div>` : "";
+      m.querySelector("[data-review]").disabled = c2.invalid;
+      i.style.borderColor = (i.dataset.k === "qty" && !(Number(i.value) >= 1)) || (i.dataset.k === "price" && !(Number(i.value) > 0)) ? "var(--neg)" : "";
+    }));
     m.querySelector("[data-review]").onclick = review;
   };
 
   const review = () => {
-    const px = s.order_type === "MARKET" ? p.last : Number(s.price), val = px * Number(s.qty);
-    const color = s.side === "BUY" ? "var(--pos)" : "var(--neg)";
-    m.innerHTML = `<h3 style="margin:0 0 10px">Order pakka kariye</h3>
-      <div class="card" style="border-color:${color}"><div style="font-size:20px;font-weight:700;color:${color}">${s.side} ${Number(s.qty)} × ${esc(p.symbol)}</div>
-        <div class="kp">${s.order_type === "MARKET" ? "Market (abhi ke daam par)" : "Limit @ " + inr(px)} · ${s.product === "CNC" ? "Delivery" : "Intraday"} · andaazan ${inr(val)}</div></div>
-      <div class="kres bad">⚠ Ye <b>asli order</b> hai. Haan dabate hi Zerodha ko chala jaayega.</div>
-      <div class="kbtns"><button class="btn" style="background:${color}" data-go>Haan, order bhejo</button><button class="btn2" data-back>Wapas</button></div>`;
+    const { px, val } = calc();
+    m.innerHTML = `${head("Order pakka kariye")}
+      <div class="ticket-b">
+        <div class="kv">
+          <span>Side</span><b style="color:${sideCol()}">${s.side}</b>
+          <span>Stock</span><b>${esc(p.symbol)} (${exch})</b>
+          <span>Quantity</span><b>${Number(s.qty)}</b>
+          <span>Order type</span><b>${s.order_type === "MARKET" ? "Market (abhi ke daam par)" : "Limit"}</b>
+          <span>Price</span><b>${s.order_type === "MARKET" ? "≈ " + inr(px) : inr(px)}</b>
+          <span>Product</span><b>${s.product === "CNC" ? "Delivery (CNC)" : "Intraday (MIS)"}</b>
+          <span>Approx. value</span><b>${inr(val)}</b>
+        </div>
+        <div class="kres bad" style="margin-top:16px">⚠ Ye <b>asli order</b> hai. "Confirm" dabate hi Zerodha ko chala jaayega.</div>
+      </div>
+      <div class="ticket-f"><button class="btn2" data-back style="flex:0 0 auto">Wapas</button>
+        <button class="btn" style="background:${sideCol()}" data-go>Confirm ${s.side === "BUY" ? "buy" : "sell"} · ${Number(s.qty)} × ${esc(p.symbol.replace(/\.(NS|BO)$/i, ""))}</button></div>`;
+    m.querySelector("[data-x]").onclick = close;
     m.querySelector("[data-back]").onclick = form;
     m.querySelector("[data-go]").onclick = send;
   };
 
   const send = async () => {
     const b = m.querySelector("[data-go]"); b.disabled = true; b.textContent = "Bhej rahe hain…";
+    m.querySelector("[data-back]").disabled = true; sending = true;
     let d = {}, okk = false;
     try {
       const r = await fetch("/api/admin/order", { method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ symbol: p.symbol, side: s.side, qty: Number(s.qty), order_type: s.order_type, price: Number(s.price), product: s.product, confirm: true }) });
       d = await r.json().catch(() => ({})); okk = r.ok && d.ok;
     } catch { d = { error: "Website se jawab nahi aaya. Order gaya ya nahi, Kite app ke Orders mein check kariye." }; }
+    sending = false;
     m.innerHTML = okk
-      ? `<h3>✓ Order Zerodha ko chala gaya</h3><p class="kp">Order ID: <code>${esc(d.order_id)}</code>. Order poora hua ya nahi (executed/rejected), ye Zerodha mein dekhiye.</p>
-         <div class="kbtns"><a class="btn" href="https://kite.zerodha.com/orders" target="_blank" rel="noopener">Kite mein Orders dekhein ↗</a><button class="btn2" data-x>Band karein</button></div>`
-      : `<h3>✗ Order nahi gaya</h3><div class="kres bad">${esc(d.error || "Pata nahi kya hua.")}</div>
-         <div class="kbtns"><button class="btn2" data-back>Wapas</button><button class="btn2" data-x>Band karein</button></div>`;
+      ? `${head("Order bhej diya")}<div class="ticket-b result"><div class="ic" style="background:var(--pos-soft);color:var(--pos)">${ICON_OK}</div>
+           <h3>Order Zerodha ko chala gaya</h3><p class="kp" style="margin:6px auto 0">Order ID <code>${esc(d.order_id)}</code><br>Order poora hua ya reject, ye Zerodha mein dekhiye.</p></div>
+         <div class="ticket-f"><button class="btn2" data-x style="flex:0 0 auto">Band karein</button><a class="btn" href="https://kite.zerodha.com/orders" target="_blank" rel="noopener">Kite mein Orders dekhein ↗</a></div>`
+      : `${head("Order nahi gaya")}<div class="ticket-b result"><div class="ic" style="background:var(--neg-soft);color:var(--neg)">${ICON_BAD}</div>
+           <h3>Order nahi gaya</h3><div class="kres bad" style="text-align:left">${esc(d.error || "Pata nahi kya hua.")}</div></div>
+         <div class="ticket-f"><button class="btn2" data-x style="flex:0 0 auto">Band karein</button><button class="btn2" data-back style="flex:1">Wapas</button></div>`;
     m.querySelectorAll("[data-x]").forEach((x) => (x.onclick = close));
     m.querySelector("[data-back]")?.addEventListener("click", form);
   };

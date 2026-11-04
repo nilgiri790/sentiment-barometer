@@ -14,6 +14,7 @@ const KITE_MSG = {
 };
 
 let root, opts = {};
+const HEAD = `<div class="page-head"><div><h1>API Keys &amp; Connections</h1>`;
 async function api(path, body) {
   const r = await fetch("/api/admin/" + path, body === undefined ? {} : {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -33,16 +34,16 @@ const ago = (iso) => {
 
 export async function showKeys(el, o = {}) {
   root = el; opts = o;
-  root.innerHTML = `<h1>🔑 Manage API Keys</h1><p class="sub">Loading…</p>`;
+  root.innerHTML = `${HEAD}<p class="sub">Loading…</p></div></div><div class="sk" style="height:120px;margin-bottom:10px"></div><div class="sk" style="height:220px"></div>`;
   let st;
-  try { st = await api("status"); } catch (e) { root.innerHTML = `<h1>🔑 Manage API Keys</h1><div class="card empty">Server se baat nahi ho payi (${esc(e.message)}).</div>`; return; }
+  try { st = await api("status"); } catch (e) { root.innerHTML = `${HEAD}</div></div><div class="card empty"><b>Server se baat nahi ho payi</b>(${esc(e.message)})</div>`; return; }
   if (!st.setup) return setupNeeded(st.missing || []);
   if (!st.loggedIn) return loginForm();
   return keysPage();
 }
 
 function setupNeeded(missing) {
-  root.innerHTML = `<h1>🔑 Manage API Keys</h1>
+  root.innerHTML = `${HEAD}</div></div>
     <div class="card"><b>Ek baar ka setup baaki hai.</b>
     <p class="kp">Apne Mac par project folder mein <b>Deploy.command</b> par double-click kariye. Wo aapse ek admin password banwayega
     aur website update kar dega. Uske baad isi page par us password se login karke saari API keys yahin se manage kar sakenge.</p>
@@ -51,11 +52,11 @@ function setupNeeded(missing) {
 }
 
 function loginForm(err = "") {
-  root.innerHTML = `<h1>🔑 Manage API Keys</h1>
-    <p class="sub">Ye page sirf aapke liye hai. Website ka link kisi ke paas bhi ho, password ke bina koi keys nahi dekh ya badal sakta.</p>
-    <form class="card login" id="lf"><label class="kp" for="pw">Admin password (jo Deploy.command mein banaya tha)</label>
+  root.innerHTML = `${HEAD}
+    <p class="sub">Ye page sirf aapke liye hai. Website ka link kisi ke paas bhi ho, password ke bina koi keys nahi dekh ya badal sakta.</p></div></div>
+    <form class="card login" id="lf"><h3 style="margin-bottom:12px">Admin login</h3><label class="label" for="pw" style="display:block;margin-bottom:5px">Admin password</label>
       <input id="pw" type="password" autocomplete="current-password" required>
-      <div class="kbtns"><button class="btn">Login</button></div>
+      <div class="kbtns"><button class="btn" style="width:100%">Login</button></div>
       ${err ? `<div class="kres bad">${esc(err)}</div>` : ""}
       <p class="kp" style="margin-top:12px">Password bhool gaye? Mac par project folder mein <b>Reset-Password.command</b> par double-click kariye.</p></form>`;
   root.querySelector("#pw").focus();
@@ -74,21 +75,31 @@ async function keysPage(data) {
   const kiteFlag = new URLSearchParams(location.hash.split("?")[1] || "").get("kite");
   const groups = [...new Set(data.providers.map((p) => p.group))];
   root.innerHTML = `
-    <div class="khead" style="justify-content:space-between"><h1 style="margin:0">🔑 Manage API Keys</h1>
+    ${HEAD}
+      <p class="sub">Keys encrypted (taala-band) rakhi jaati hain. Save hone ke baad poori key dobara nahi dikhti, sirf aakhri 4 akshar.
+      Badlav turant lagu hote hain, dobara deploy ki zaroorat nahi.</p></div>
       <button class="btn2" id="logout">Logout</button></div>
-    <p class="sub">Keys encrypted (taala-band) rakhi jaati hain. Save hone ke baad poori key dobara nahi dikhti, sirf aakhri 4 akshar.
-      Badlav turant lagu hote hain, dobara deploy ki zaroorat nahi.</p>
-    ${kiteFlag && KITE_MSG[kiteFlag] ? `<div class="kres ${KITE_MSG[kiteFlag][0]}">${KITE_MSG[kiteFlag][1]}</div>` : ""}
-    <div class="card kcard" style="margin-top:14px"><div class="khead"><h3>⚡ News abhi collect karein</h3></div>
-      <p class="kp">Har ghante ye apne aap hota hai. Naya key save karne ke baad ya pehli baar, yahan se turant chala sakte hain (10 second tak lagenge).</p>
-      <button class="btn" id="run">Run now</button><div class="runres" id="runres"></div></div>
-    <div class="card kcard"><div class="khead"><h3>📒 Haal ke orders (website se)</h3></div><div id="olog" class="runres">Loading…</div></div>
-    ${groups.map((g) => `<div class="kgroup">${esc(g)}</div>${data.providers.filter((p) => p.group === g).map(card).join("")}`).join("")}`;
+    ${kiteFlag && KITE_MSG[kiteFlag] ? `<div class="kres ${KITE_MSG[kiteFlag][0]}" style="margin:0 0 14px">${KITE_MSG[kiteFlag][1]}</div>` : ""}
+    <div class="grid2">
+      <section class="panel"><div class="panel-h"><h2>News collection</h2><span class="right label">Auto · har ghante</span></div>
+        <div class="panel-b"><p class="kp" style="margin-top:0">Naya key save karne ke baad ya pehli baar, yahan se turant chala sakte hain (10 second tak lagenge).</p>
+        <button class="btn" id="run">Run now</button><div class="runres" id="runres"></div></div></section>
+      <section class="panel"><div class="panel-h"><h2>Recent orders</h2><span class="right label">Website se</span></div>
+        <div id="olog"><div class="sk" style="height:90px;margin:12px"></div></div></section>
+    </div>
+    ${groups.map((g) => `<div class="kgroup">${esc(g)}</div><div class="kgrid">${data.providers.filter((p) => p.group === g).map(card).join("")}</div>`).join("")}`;
   root.querySelector("#logout").onclick = async () => { await api("logout", {}).catch(() => {}); loginForm(); };
   root.querySelector("#run").onclick = runNow;
   api("orders").then((d) => {
     const el = root.querySelector("#olog"); if (!el) return;
-    el.innerHTML = d.orders.length ? d.orders.slice(0, 15).map((o) => `${o.ok ? "✓" : "✗"} ${new Date(o.at).toLocaleString("en-IN")} · ${esc(o.order.transaction_type || o.order.side || "")} ${esc(o.order.quantity ?? o.order.qty ?? "")} × ${esc(o.order.tradingsymbol || o.order.symbol || "")}${o.value ? ` · ₹${Number(o.value).toLocaleString("en-IN")}` : ""} · ${o.ok ? "Order ID " + esc(o.order_id) : esc(o.error)}`).join("<br>") : "Abhi tak koi order nahi.";
+    el.innerHTML = d.orders.length ? `<div class="scroll" style="max-height:260px"><table class="tbl"><thead><tr><th>Time</th><th>Side</th><th>Stock</th><th class="r">Qty</th><th class="r hide-m">Value</th><th>Status</th></tr></thead><tbody>${
+      d.orders.slice(0, 15).map((o) => { const sd = String(o.order.transaction_type || o.order.side || "").toUpperCase();
+        return `<tr><td class="src when">${new Date(o.at).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</td>
+          <td><span class="pill ${sd === "BUY" ? "p-pos" : "p-neg"}">${esc(sd)}</span></td>
+          <td>${esc(o.order.tradingsymbol || o.order.symbol || "")}</td><td class="r tnum">${esc(o.order.quantity ?? o.order.qty ?? "")}</td>
+          <td class="r tnum hide-m">${o.value ? `₹${Number(o.value).toLocaleString("en-IN")}` : "–"}</td>
+          <td>${o.ok ? `<span class="pill p-pos">Sent</span> <span class="src">${esc(o.order_id)}</span>` : `<span class="pill p-neg">Failed</span> <span class="src">${esc(o.error)}</span>`}</td></tr>`; }).join("")
+      }</tbody></table></div>` : `<div class="empty" style="padding:28px 16px">Abhi tak koi order nahi.</div>`;
   }).catch(() => {});
   root.querySelectorAll("[data-act]").forEach((b) => (b.onclick = () => act(b)));
 }
@@ -105,13 +116,13 @@ function card(p) {
     const keyField = p.fields.find((f) => f.id === "api_key");
     kite = `<div class="copy">Kite app mein <b>Redirect URL</b> ye daaliye: <code>${esc(cb)}</code>
         <button class="btn2" data-act="copy" data-text="${esc(cb)}">Copy</button></div>
-      <div class="kbtns">${p.kite.loggedIn
+      <div class="kbtns" style="justify-content:space-between">${p.kite.loggedIn
         ? `<span class="pill p-pos">Aaj ka login ho gaya${p.kite.user ? `: ${esc(p.kite.user)}` : ""}</span>`
         : `<span class="pill p-neg">Aaj login nahi hua</span>`}
         <button class="btn" data-act="kite" data-id="${p.id}" ${keyField?.set && p.fields.every((f) => f.set) ? "" : "disabled title='Pehle keys save kariye'"}>Login with Zerodha</button></div>`;
   }
   return `<div class="card kcard" id="k-${p.id}">
-    <div class="khead"><h3>${esc(p.name)}</h3><span class="pill ${cls}">${label}</span>${keyPill}</div>
+    <div class="khead"><h3>${esc(p.name)}</h3><span style="margin-left:auto;display:inline-flex;gap:6px;flex-wrap:wrap">${keyPill}<span class="pill ${cls}">${label}</span></span></div>
     <p class="kp">${esc(p.purpose)}${p.cost ? ` <i>${esc(p.cost)}</i>` : ""}
       ${p.link ? ` <a href="${esc(p.link)}" target="_blank" rel="noopener">Key kahan milegi ↗</a>` : ""}</p>
     ${p.fields.length ? `<div class="kfields">${p.fields.map((f) => `<label>${esc(f.label)}
@@ -156,7 +167,7 @@ async function runNow() {
   b.disabled = true; b.textContent = "Chal raha hai…"; out.textContent = "";
   try {
     const d = await api("collect", {});
-    out.innerHTML = d.results.map((r) => r.error ? `✗ ${esc(r.stock)}: ${esc(r.error)}` : `✓ ${esc(r.stock)}: ${r.new} nayi khabrein, ${r.scored} score hui`).join("<br>");
+    out.innerHTML = d.results.map((r) => r.error ? `<span class="down">✗</span> <b>${esc(r.stock)}</b> · ${esc(r.error)}` : `<span class="up">✓</span> <b>${esc(r.stock)}</b> · ${r.new} nayi khabrein, ${r.scored} score hui`).join("<br>");
     opts.onCollected?.();
   } catch (e) {
     if (e.status === 401) return loginForm("Session khatam ho gaya, dobara login kariye.");
