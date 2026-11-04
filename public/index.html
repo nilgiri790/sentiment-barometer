@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sentiment Barometer</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
+<style>
+:root{
+  --bg:#f6f7f9;--card:#fff;--ink:#16191d;--muted:#5f6670;--line:#e3e6ea;
+  --pos:#1f8a4c;--pos-soft:#dff2e6;--neg:#c93c3c;--neg-soft:#f8e0e0;--neu:#8a9099;--neu-soft:#eceef1;
+  --accent:#2b5fb4;--warn-bg:#fff5d6;--warn-ink:#6b5300;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f1216;--card:#171b21;--ink:#e8ebef;--muted:#9aa2ad;--line:#272d35;
+  --pos:#4cc47e;--pos-soft:#173726;--neg:#ef6b6b;--neg-soft:#3d1c1c;--neu:#8d95a0;--neu-soft:#232930;
+  --accent:#7aa7f0;--warn-bg:#3a3214;--warn-ink:#f1d98a;}}
+:root[data-theme="dark"]{
+  --bg:#0f1216;--card:#171b21;--ink:#e8ebef;--muted:#9aa2ad;--line:#272d35;
+  --pos:#4cc47e;--pos-soft:#173726;--neg:#ef6b6b;--neg-soft:#3d1c1c;--neu:#8d95a0;--neu-soft:#232930;
+  --accent:#7aa7f0;--warn-bg:#3a3214;--warn-ink:#f1d98a;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1100px;margin:0 auto;padding:20px 16px 40px}
+h1{font-size:24px;margin:0 0 4px}
+.sub{color:var(--muted);margin:0 0 14px}
+.banner{background:var(--warn-bg);color:var(--warn-ink);border-radius:10px;padding:10px 14px;margin-bottom:18px;font-size:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+.meta{display:flex;flex-wrap:wrap;gap:6px 16px;color:var(--muted);font-size:13px;margin-bottom:14px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:18px}
+.sc{cursor:pointer;text-align:left;font:inherit;color:inherit;transition:border-color .15s}
+.sc:hover{border-color:var(--accent)}
+.sc.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.sc .name{font-weight:600;font-size:13px;color:var(--muted);letter-spacing:.02em}
+.sc .num{font-size:30px;font-weight:700;font-variant-numeric:tabular-nums;margin:2px 0}
+.pill{display:inline-block;font-size:12px;font-weight:600;padding:2px 8px;border-radius:99px}
+.p-pos{background:var(--pos-soft);color:var(--pos)}.p-neg{background:var(--neg-soft);color:var(--neg)}.p-neu{background:var(--neu-soft);color:var(--muted)}
+.sc .small{font-size:12px;color:var(--muted);margin-top:6px}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:12px;margin-bottom:18px}
+@media(max-width:760px){.grid{grid-template-columns:minmax(0,1fr)}}
+h2{font-size:16px;margin:0 0 10px}
+svg{display:block;width:100%;height:auto}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--muted);margin-top:6px;flex-wrap:wrap}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.search{display:flex;gap:8px;flex-wrap:wrap}
+.search input{flex:1;min-width:0;padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit}
+.search button,.btn{padding:10px 16px;border-radius:8px;border:0;background:var(--accent);color:#fff;font:inherit;font-weight:600;cursor:pointer}
+.row select{padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit;max-width:100%}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{background:transparent;color:var(--ink);border:0;padding:8px 12px;font:inherit;cursor:pointer}
+.seg button.on{background:var(--accent);color:#fff}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:10px}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:12px}
+.metrics .m b{display:block;font-size:22px;font-variant-numeric:tabular-nums}
+.metrics .m span{font-size:12px;color:var(--muted)}
+.empty{padding:30px 16px;text-align:center;color:var(--muted)}
+a{color:inherit}
+.meta select{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:6px;padding:2px 6px}
+.note{font-size:12px;color:var(--muted);margin-top:8px}
+.tbl{width:100%;border-collapse:collapse;font-size:14px}
+.tbl th{text-align:left;font-size:12px;color:var(--muted);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line)}
+.tbl td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
+.tbl td.s{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
+.tbl .src{color:var(--muted);font-size:12px}
+.scroll{overflow-x:auto}
+@media(max-width:600px){.tbl .hide-m{display:none}}
+footer{color:var(--muted);font-size:12px;margin-top:20px;text-align:center}
+
+.app{display:flex;min-height:100vh}
+.side{width:220px;flex:none;background:var(--card);border-right:1px solid var(--line);padding:18px 12px;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:4px}
+.brand{font-weight:700;font-size:15px;padding:4px 10px 14px;display:flex;gap:8px;align-items:center}
+.nav{display:flex;align-items:center;gap:10px;padding:10px;border-radius:8px;color:var(--ink);text-decoration:none;font-weight:500}
+.nav:hover{background:var(--neu-soft)}
+.nav.on{background:var(--accent);color:#fff}
+.side .foot{margin-top:auto;font-size:11px;color:var(--muted);padding:10px}
+.app>main{flex:1;min-width:0}
+@media(max-width:760px){
+  .app{flex-direction:column}
+  .side{width:auto;height:auto;position:sticky;top:0;z-index:5;flex-direction:row;align-items:center;padding:8px 12px;border-right:0;border-bottom:1px solid var(--line);overflow-x:auto}
+  .brand{padding:0 8px 0 0}.brand span{display:none}.side .foot{display:none}.nav{padding:8px 10px;white-space:nowrap}
+}
+.kgroup{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:22px 0 8px}
+.kcard{margin-bottom:12px}
+.khead{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;margin-bottom:4px}
+.khead h3{margin:0;font-size:16px}
+.kp{color:var(--muted);font-size:14px;margin:4px 0 10px}
+.kfields{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+.kfields label{font-size:12px;color:var(--muted);display:block}
+.kfields input,.login input{width:100%;margin-top:4px;padding:9px 11px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit}
+.kbtns{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;align-items:center}
+.btn2{padding:9px 14px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--ink);font:inherit;font-weight:600;cursor:pointer}
+.btn2.danger{color:var(--neg)}
+.btn[disabled],.btn2[disabled]{opacity:.5;cursor:wait}
+.kres{font-size:13px;margin-top:10px;padding:8px 10px;border-radius:8px}
+.kres.ok{background:var(--pos-soft);color:var(--pos)}.kres.bad{background:var(--neg-soft);color:var(--neg)}
+.copy{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px;background:var(--bg);border:1px dashed var(--line);border-radius:8px;padding:8px 10px;margin-top:10px}
+.copy code{word-break:break-all}
+.login{max-width:380px}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;font-size:14px;z-index:20;max-width:calc(100% - 32px)}
+.p-soon{background:var(--warn-bg);color:var(--warn-ink)}
+.runres{font-size:13px;margin-top:8px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="app">
+<aside class="side">
+  <div class="brand">📈 <span>Sentiment Barometer</span></div>
+  <a class="nav" href="#/" data-v="dash">📊 Dashboard</a>
+  <a class="nav" href="#/keys" data-v="keys">🔑 Manage API Keys</a>
+  <div class="foot">Signal to study, not investment advice.</div>
+</aside>
+<main>
+<div class="wrap" id="view-dash">
+  <h1>Stock Sentiment Barometer</h1>
+  <p class="sub">Trust vs lack of trust, built from news headlines. A signal to study, not investment advice.</p>
+
+  <div class="meta"><span id="updated">Loading…</span><span id="engine"></span>
+    <label>Look-back: <select id="days"><option value="1">1 day</option><option value="3" selected>3 days</option><option value="7">7 days</option><option value="14">14 days</option></select></label></div>
+
+  <div class="card" style="margin-bottom:18px">
+    <h2>Live price search</h2>
+    <form class="search" id="sform"><input id="q" placeholder="e.g. Zomato, ITC, SBIN, Tata Steel" autocomplete="off"><button>Search</button></form>
+    <div id="sres"></div>
+  </div>
+
+  <div id="main"><div class="card empty">Loading…</div></div>
+  <footer>Sentiment is one signal, not a guarantee. This is not investment advice.</footer>
+</div>
+<div class="wrap" id="view-keys" hidden></div>
+</main>
+</div>
+<script type="module">
+import { showKeys } from "./keys.mjs";
+function route(){
+  const keys = location.hash.startsWith("#/keys");
+  $("view-dash").hidden = keys; $("view-keys").hidden = !keys;
+  document.querySelectorAll(".nav").forEach(a => a.classList.toggle("on", a.dataset.v === (keys ? "keys" : "dash")));
+  if (keys) showKeys($("view-keys"), { onCollected: () => load() });
+  window.scrollTo(0, 0);
+}
+window.addEventListener("hashchange", route);
+import { barometer, dailySeries, labelFor, sinceIso } from "./barometer.mjs";
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const cls = v => v >= 15 ? "pos" : v <= -15 ? "neg" : "neu";
+const sign = v => (v > 0 ? "+" : "") + Math.round(v);
+const fmt = v => v == null ? "–" : v.toLocaleString("en-IN", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+let DATA, cur, days = 3;
+const prices = {};
+
+function ago(iso){
+  const h = (Date.now() - new Date(iso.endsWith("Z") ? iso : iso + "Z")) / 36e5;
+  if (h < 1) return Math.max(1, Math.round(h*60)) + " min ago";
+  if (h < 24) return Math.round(h) + " h ago";
+  return Math.round(h/24) + " d ago";
+}
+
+function gauge(v){
+  const W=260,H=180,cx=130,cy=130,r=105,sw=22;
+  const pt=(val,rad)=>{const a=Math.PI*(1-(val+100)/200);return [cx+rad*Math.cos(a),cy-rad*Math.sin(a)]};
+  const arc=(a,b,col)=>{const[x1,y1]=pt(a,r),[x2,y2]=pt(b,r);return `<path d="M${x1} ${y1} A${r} ${r} 0 0 1 ${x2} ${y2}" stroke="${col}" stroke-width="${sw}" fill="none"/>`};
+  const [nx,ny]=pt(v,r-18);
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Barometer ${v}">
+    ${arc(-100,-40.5,"var(--neg)")}${arc(-39.5,-15.5,"var(--neg-soft)")}${arc(-14.5,14.5,"var(--neu-soft)")}${arc(15.5,39.5,"var(--pos-soft)")}${arc(40.5,100,"var(--pos)")}
+    <line x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="${cx}" cy="${cy}" r="6" fill="var(--ink)"/>
+    <text x="${cx}" y="${cy+42}" text-anchor="middle" font-size="30" font-weight="700" fill="var(--ink)">${sign(v)}</text>
+    <text x="14" y="${cy+22}" font-size="11" fill="var(--muted)">−100</text><text x="${W-14}" y="${cy+22}" font-size="11" text-anchor="end" fill="var(--muted)">+100</text>
+  </svg>`;
+}
+
+function chart(daily, price){
+  const W=($("chart")?.clientWidth||640)<500?380:640, H=W<500?240:260, L=40,R=56,T=12,B=28,iw=W-L-R,ih=H-T-B;
+  const pmap = {}; (price?.points||[]).forEach(([t,c]) => pmap[new Date(t).toISOString().slice(0,10)] = c);
+  const start = sinceIso(Math.max(days,14)).slice(0,10);
+  const all = [...new Set([...Object.keys(pmap), ...Object.keys(daily)])].filter(d => d >= start).sort();
+  if (!all.length) return `<div class="empty">Abhi chart ke liye data nahi hai.</div>`;
+  const n=all.length,bw=iw/n, ys=v=>T+ih/2-(v/100)*(ih/2);
+  let g=`<line x1="${L}" x2="${W-R}" y1="${ys(0)}" y2="${ys(0)}" stroke="var(--line)"/>`;
+  for(const t of [-100,-50,0,50,100]) g+=`<text x="${L-6}" y="${ys(t)+4}" font-size="11" text-anchor="end" fill="var(--muted)">${t>0?"+":""}${t}</text>`;
+  all.forEach((d,i)=>{const v=daily[d]; if(v==null)return; const x=L+i*bw+bw*.2,y0=ys(0),y1=ys(v);
+    g+=`<rect x="${x}" y="${Math.min(y0,y1)}" width="${bw*.6}" height="${Math.max(1,Math.abs(y1-y0))}" rx="2" fill="var(--${v>=0?"pos":"neg"})" opacity=".85"><title>${d}: sentiment ${sign(v)}</title></rect>`;});
+  const pv=all.map(d=>pmap[d]).filter(x=>x!=null);
+  if (pv.length){
+    const pmin=Math.min(...pv),pmax=Math.max(...pv),pad=(pmax-pmin)*.15||1, yp=v=>T+ih-((v-pmin+pad)/(pmax-pmin+2*pad))*ih;
+    const pts=all.map((d,i)=>pmap[d]!=null?[L+i*bw+bw/2,yp(pmap[d]),d,pmap[d]]:null).filter(Boolean);
+    g+=`<polyline points="${pts.map(p=>p[0]+","+p[1]).join(" ")}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round"/>`;
+    pts.forEach(p=>g+=`<circle cx="${p[0]}" cy="${p[1]}" r="3" fill="var(--accent)"><title>${p[2]}: ₹${fmt(p[3])}</title></circle>`);
+    for(const v of [pmin,pmax]) g+=`<text x="${W-R+6}" y="${yp(v)+4}" font-size="11" fill="var(--accent)">₹${Math.round(v)}</text>`;
+  }
+  all.forEach((d,i)=>{if(i%Math.ceil(n/7)===0)g+=`<text x="${L+i*bw+bw/2}" y="${H-8}" font-size="11" text-anchor="middle" fill="var(--muted)">${d.slice(8)}/${d.slice(5,7)}</text>`;});
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Daily sentiment and price">${g}</svg>`;
+}
+
+function render(){
+  const w = DATA.weights, since = sinceIso(days), S = DATA.stocks;
+  const sum = Object.fromEntries(Object.entries(S).map(([k,s]) => [k, barometer(s.headlines.filter(h => h.published >= since), w)]));
+  const total = Object.values(S).reduce((a,s) => a + s.headlines.length, 0);
+  if (!total){
+    $("main").innerHTML = `<div class="card empty"><b>Abhi koi news collect nahi hui.</b><br>Har ghante news apne aap aati hai. Turant chahiye to <a href="#/keys">🔑 Manage API Keys</a> mein login karke <b>Run now</b> dabaiye.</div>`;
+    return;
+  }
+  const s = S[cur], b = sum[cur];
+  $("main").innerHTML = `
+    <div class="cards">${Object.entries(sum).map(([k,v]) => `<button class="card sc${k===cur?" on":""}" data-k="${k}">
+      <div class="name">${esc(k)}</div><div class="num" style="color:var(--${cls(v.score)==="neu"?"ink":cls(v.score)})">${sign(v.score)}</div>
+      <span class="pill p-${cls(v.score)}">${labelFor(v.score)}</span><div class="small">${v.count} headlines · +${v.positive} / −${v.negative}</div></button>`).join("")}</div>
+    <div class="grid">
+      <div class="card"><h2>${esc(cur)}: ${labelFor(b.score)}</h2>${gauge(b.score)}</div>
+      <div class="card"><h2>Daily sentiment vs price</h2><div id="chart"></div>
+        <div class="legend"><span><i style="background:var(--pos)"></i>Positive day</span><span><i style="background:var(--neg)"></i>Negative day</span><span><i style="background:var(--accent);height:3px"></i>Close price</span></div></div>
+    </div>
+    <div class="card"><h2>Latest headlines: ${esc(cur)}</h2>
+      <div class="scroll"><table class="tbl"><thead><tr><th>Score</th><th>Headline</th><th class="hide-m">When</th><th class="hide-m">Why</th></tr></thead><tbody>
+      ${s.headlines.slice(0,60).map(h => `<tr>
+        <td class="s" style="color:var(--${h.score>0.15?"pos":h.score<-0.15?"neg":"muted"})">${h.score>0?"+":""}${h.score.toFixed(2)}</td>
+        <td><a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.title)}</a><div class="src">${esc(h.source)}</div></td>
+        <td class="hide-m src">${ago(h.published)}</td><td class="hide-m src">${esc(h.reason)}</td></tr>`).join("") || `<tr><td colspan="4" class="src">No headlines yet.</td></tr>`}
+      </tbody></table></div></div>`;
+  document.querySelectorAll(".sc").forEach(el => el.onclick = () => { cur = el.dataset.k; render(); });
+  const draw = () => { const c = $("chart"); if (c) c.innerHTML = chart(dailySeries(s.headlines, w), prices[s.ticker]); };
+  draw();
+  if (!(s.ticker in prices)) {
+    prices[s.ticker] = null;
+    fetch(`/api/price?sym=${encodeURIComponent(s.ticker)}&range=1mo`).then(r => r.ok ? r.json() : null)
+      .then(p => { prices[s.ticker] = p; if (cur && S[cur].ticker === s.ticker) draw(); }).catch(() => {});
+  }
+}
+
+async function load(){
+  try {
+    const r = await fetch("/api/data"); if (!r.ok) throw new Error(r.status);
+    DATA = await r.json();
+  } catch (e) { $("main").innerHTML = `<div class="card empty">Data load nahi ho paya (${esc(e.message)}). Page refresh karke dekhein.</div>`; return; }
+  cur ??= Object.keys(DATA.stocks)[0];
+  $("updated").textContent = DATA.updated ? "Last update: " + ago(DATA.updated) : "Not updated yet";
+  $("engine").textContent = DATA.engine ? "Scoring: " + (DATA.engine === "keyword" ? "keyword (simple)" : DATA.engine) : "";
+  render();
+}
+$("days").onchange = e => { days = +e.target.value; render(); };
+load();
+route();
+setInterval(load, 10 * 60 * 1000);
+
+// ---- live price search ----
+let pick = null, span = "1d", timer = null;
+$("sform").onsubmit = async e => {
+  e.preventDefault();
+  const q = $("q").value.trim(); if (!q) return;
+  $("sres").innerHTML = `<div class="note">Searching…</div>`;
+  let list = [];
+  try { const r = await fetch(`/api/search?q=${encodeURIComponent(q)}`); if (r.ok) list = await r.json(); } catch {}
+  if (!list.length) { const s = q.toUpperCase().replace(/\s+/g, ""); list = [{symbol:s+".NS",name:"",exchange:"NSE"},{symbol:s+".BO",name:"",exchange:"BSE"},{symbol:s,name:"",exchange:""}]; }
+  $("sres").innerHTML = `<div class="row"><select id="pick">${list.map(o => `<option value="${esc(o.symbol)}">${esc(o.symbol)}  |  ${esc(o.name)}  |  ${esc(o.exchange)}</option>`).join("")}</select>
+    <div class="seg" id="span">${["1d","5d","1mo"].map(x => `<button type="button" data-s="${x}" class="${x===span?"on":""}">${{"1d":"1 day","5d":"5 days","1mo":"1 month"}[x]}</button>`).join("")}</div>
+    <label class="note" style="margin:0"><input type="checkbox" id="auto"> Auto-refresh every minute</label></div><div id="pbox"></div>`;
+  $("pick").onchange = () => { pick = $("pick").value; showPrice(); };
+  $("span").onclick = ev => { const b = ev.target.closest("button"); if (!b) return; span = b.dataset.s; $("span").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); showPrice(); };
+  $("auto").onchange = ev => { clearInterval(timer); if (ev.target.checked) timer = setInterval(showPrice, 60000); };
+  pick = list[0].symbol; showPrice();
+};
+
+async function showPrice(){
+  const box = $("pbox"); if (!box) return;
+  let p;
+  try { const r = await fetch(`/api/price?sym=${encodeURIComponent(pick)}&range=${span}&t=${Date.now() / 60000 | 0}`); p = await r.json(); if (!r.ok) throw new Error(p.error || r.status); }
+  catch (e) { box.innerHTML = `<div class="note">${esc(pick)} ka price nahi mila (${esc(e.message)}). List se koi aur match try karein.</div>`; return; }
+  const up = p.last >= p.points[0][1], chg = p.prevClose ? p.last - p.prevClose : null;
+  const W=640,H=220,L=8,R=8,T=10,B=10, vs=p.points.map(x=>x[1]), mn=Math.min(...vs), mx=Math.max(...vs), rg=(mx-mn)||1;
+  const pts = p.points.map((x,i)=>`${L+i*(W-L-R)/Math.max(1,p.points.length-1)},${T+(H-T-B)*(1-(x[1]-mn)/rg)}`).join(" ");
+  box.innerHTML = `<div class="metrics">
+      <div class="m"><span>${esc(p.symbol)}</span><b>${fmt(p.last)}</b>${chg!=null?`<span style="color:var(--${chg>=0?"pos":"neg"})">${chg>=0?"+":""}${fmt(chg)} (${(chg/p.prevClose*100).toFixed(2)}%) vs previous close</span>`:""}</div>
+      <div class="m"><span>High</span><b>${fmt(p.high)}</b></div><div class="m"><span>Low</span><b>${fmt(p.low)}</b></div></div>
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="margin-top:10px;height:220px"><polyline points="${pts}" fill="none" stroke="var(--${up?"pos":"neg"})" stroke-width="2"/></svg>
+    ${p.notice ? `<div class="kres bad" style="margin-top:10px">${esc(p.notice)}</div>` : ""}
+    <div class="note">Updated ${new Date().toLocaleTimeString()}. ${p.source === "Zerodha" ? "<b>Prices: Zerodha (real-time).</b>" : "Prices: Yahoo Finance (Indian stocks ke liye ~15 min late)."} Not investment advice.</div>`;
+}
+</script>
+</body>
+</html>

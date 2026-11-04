@@ -1,0 +1,5 @@
+node_modules/
+.netlify/
+.tools/
+api_key.txt
+.env

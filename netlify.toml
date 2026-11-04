@@ -1,0 +1,12 @@
+# Netlify reads this on every deploy (GitHub push or Deploy.command).
+[build]
+  publish = "public"
+  command = "npm test"          # if a test fails, Netlify stops and the live site stays as it was
+
+[build.environment]
+  NODE_VERSION = "22"
+  NPM_FLAGS = "--omit=dev"      # Netlify does not need the deploy tools, only the site's own parts
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
