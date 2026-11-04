@@ -12,11 +12,12 @@ export function sign(secret, body) {
 
 export function validOrder(o) {
   if (!o || typeof o !== "object") return "order missing";
-  if (!["NSE", "BSE"].includes(o.exchange)) return "exchange must be NSE or BSE";
+  if (!["NSE", "BSE", "NFO"].includes(o.exchange)) return "exchange must be NSE, BSE or NFO";
   if (!/^[A-Z0-9&\-_.]{1,40}$/.test(o.tradingsymbol || "")) return "bad symbol";
   if (!["BUY", "SELL"].includes(o.transaction_type)) return "side must be BUY or SELL";
   if (!["MARKET", "LIMIT"].includes(o.order_type)) return "order type must be MARKET or LIMIT";
-  if (!["CNC", "MIS"].includes(o.product)) return "product must be CNC or MIS";
+  if (o.exchange === "NFO" ? !["NRML", "MIS"].includes(o.product) : !["CNC", "MIS"].includes(o.product))
+    return o.exchange === "NFO" ? "options product must be NRML or MIS" : "product must be CNC or MIS";
   if (!Number.isInteger(o.quantity) || o.quantity < 1 || o.quantity > 100000) return "bad quantity";
   if (o.order_type === "LIMIT" && !(Number(o.price) > 0)) return "limit price missing";
   return null;

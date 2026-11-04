@@ -57,8 +57,8 @@ test("website: builds order from page input; refuses non-Indian and bad input", 
     { exchange: "NSE", tradingsymbol: "ITC", transaction_type: "BUY", order_type: "LIMIT", product: "CNC", quantity: 3, price: 280.46 });
   assert.match(buildOrder({ symbol: "AAPL", side: "BUY", qty: 1, order_type: "MARKET", product: "CNC" }).error, /NSE\/BSE/);
   assert.match(buildOrder({ symbol: "ITC.NS", side: "BUY", qty: 1.5, order_type: "MARKET", product: "CNC" }).error, /quantity/);
-  assert.deepEqual(limitsOf({ max_qty: "50", max_value: "1,00,000" }), { max_qty: 50, max_value: 100000 });
-  assert.deepEqual(limitsOf({}), { max_qty: 10, max_value: 25000 });
+  assert.deepEqual(limitsOf({ max_qty: "50", max_value: "1,00,000", max_lots: "2" }), { max_qty: 50, max_value: 100000, max_lots: 2 });
+  assert.deepEqual(limitsOf({}), { max_qty: 10, max_value: 25000, max_lots: 1 });
 });
 
 const SECRETS = () => ({ kite: { api_key: "kk", api_secret: "s", access_token: "tok", token_at: new Date().toISOString() },
@@ -107,7 +107,7 @@ test("admin: order needs login + confirm, blocks double-click, keeps a log", asy
     await call("keys", { provider: prov, values });
   }
   let st = (await call("status")).body;
-  assert.deepEqual(st.trading, { relay: true, kite: false, limits: { max_qty: 10, max_value: 5000 } });
+  assert.deepEqual(st.trading, { relay: true, kite: false, limits: { max_qty: 10, max_value: 5000, max_lots: 1 }, fno: false });
   // pretend Zerodha login happened today
   const { loadSecrets, saveSecrets } = await import("../lib/secrets.mjs");
   const all = await loadSecrets(store, env); all.kite = { ...all.kite, access_token: "tok", token_at: new Date().toISOString() }; await saveSecrets(store, all, env);

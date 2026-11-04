@@ -90,5 +90,40 @@ test("search uses Zerodha's NSE list (cached per day), handles typos-ish and quo
 
 test("instrument CSV parser keeps commas inside quotes", () => {
   const rows = parseInstruments('instrument_token,exchange_token,tradingsymbol,name,last_price,expiry,strike,tick_size,lot_size,instrument_type,segment,exchange\n9,9,X,"A, B",0,,0,0.05,1,EQ,NSE,NSE\n');
-  assert.deepEqual(rows, [["X", "A, B"]]);
+  assert.deepEqual(rows, [["X", "A, B", "EQ"]]);
+});
+
+test("search: Bank Nifty and other indices, typed the way people type them", async () => {
+  const fresh = { ...KITE, token_at: new Date().toISOString() }, cache = memStore();
+  const csv = 'instrument_token,exchange_token,tradingsymbol,name,last_price,expiry,strike,tick_size,lot_size,instrument_type,segment,exchange\n' +
+    '1,1,BANKNIFTY1,"KOTAK NIFTY BANK ETF",0,,0,0.01,1,EQ,NSE,NSE\n260105,1,NIFTY BANK,NIFTY BANK,0,,0,0,0,EQ,INDICES,NSE\n' +
+    '256265,1,NIFTY 50,NIFTY 50,0,,0,0,0,EQ,INDICES,NSE\n3,3,BANKBARODA,"BANK OF BARODA",0,,0,0.05,1,EQ,NSE,NSE\n4,4,HDFCBANK,"HDFC BANK LTD",0,,0,0.05,1,EQ,NSE,NSE\n';
+  const f = async (url) => { if (url.endsWith("/instruments/NSE")) return ok(csv);
+    if (url.includes("/quote")) return ok({ data: { "NSE:NIFTY BANK": { instrument_token: 260105, last_price: 52000.5, ohlc: { close: 51800 } } } });
+    if (url.includes("/historical/260105/")) return ok({ data: { candles: [["2026-11-04T09:15:00+0530", 1, 52100, 51900, 52000, 0]] } });
+    throw new Error(url); };
+  let r = await get("/api/search?q=banknifty", { secrets: { kite: fresh }, cache, fetchImpl: f, now: NOW });
+  assert.equal(r.body[0].symbol, "NIFTY BANK.NS"); assert.equal(r.body[0].index, true); assert.equal(r.body[0].exchange, "NSE INDEX");
+  assert.ok(r.body.some((x) => x.symbol === "BANKNIFTY1.NS"), "the ETF is still offered");
+  r = await get("/api/search?q=bank", { secrets: { kite: fresh }, cache, fetchImpl: f, now: NOW });
+  assert.ok(["NIFTY BANK.NS", "BANKBARODA.NS", "HDFCBANK.NS"].every((s) => r.body.some((x) => x.symbol === s)), JSON.stringify(r.body));
+  r = await get("/api/search?q=nifty", { secrets: { kite: fresh }, cache, fetchImpl: f, now: NOW });
+  assert.equal(r.body[0].symbol, "NIFTY 50.NS");
+  // price of an index: works, and is marked as index (no Buy/Sell)
+  r = await get("/api/price?sym=" + encodeURIComponent("NIFTY BANK.NS") + "&range=1d", { secrets: { kite: fresh }, cache, fetchImpl: f, now: NOW });
+  assert.equal(r.status, 200); assert.equal(r.body.source, "Zerodha"); assert.equal(r.body.index, true); assert.equal(r.body.last, 52000.5);
+  r = await get("/api/price?sym=TCS.NS&range=1d", { secrets: { kite: fresh }, cache, fetchImpl: fakeNet().f, now: NOW });
+  assert.equal(r.body.index, undefined, "a share is not an index");
+});
+
+test("index price without Zerodha uses the Yahoo index symbol", async () => {
+  let asked = "";
+  const f = async (url) => { asked = url; return ok({ chart: { result: [{ meta: {}, timestamp: [1, 2], indicators: { quote: [{ close: [51000, 51100], high: [51200, 51200], low: [50900, 50900] }] } }] } }); };
+  const r = await get("/api/price?sym=" + encodeURIComponent("NIFTY BANK.NS") + "&range=1d", { secrets: {}, fetchImpl: f, now: NOW });
+  assert.equal(r.body.symbol, "NIFTY BANK.NS"); assert.equal(r.body.index, true); assert.match(asked, /%5ENSEBANK/);
+});
+
+test("orders refuse an index symbol", async () => {
+  const { buildOrder } = await import("../lib/orders.mjs");
+  assert.match(buildOrder({ symbol: "NIFTY BANK.NS", side: "BUY", qty: 1, order_type: "MARKET", product: "CNC" }).error, /bad symbol/);
 });

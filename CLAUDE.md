@@ -74,6 +74,33 @@ tables, skeletons, order ticket (side toggle, segmented order type/product, live
 success still only on server ok). Holdings/positions/watchlist/P&L/indices do NOT exist and were not added.
 Checked with a 44-step Playwright regression against the real handlers (fake Kite/relay) + 31 unit tests.
 
+## Search (2026-11-05)
+Type-ahead suggestions under the Quote search box (debounced 160 ms, per-query cache, arrow keys/Enter/Esc, mouse;
+same /api/search). Search now also returns NSE indices (Kite instruments segment INDICES, cache key `kite-nse-v2`, rows
+[symbol, name, kind]) and understands BANKNIFTY/NIFTY/FINNIFTY/VIX-style names (INDEX_ALIASES). Index symbols look like
+"NIFTY BANK.NS"; /api/price marks them `index:true` (Yahoo fallback via ^NSEBANK/^NSEI etc.); the page shows no Buy/Sell
+for indices and the order code rejects them.
+
+## Dashboard stock list (2026-11-05)
+`lib/watchlist.mjs`: the dashboard stocks live in Blobs store `sentiment` key `watchlist` (starts as config STOCKS; max 25).
+runAll and dashboardData use it, so only listed stocks are collected hourly. Admin-only POST /api/admin/watch
+{op:"add", symbol, name, index} (share or index; options refused; fetches its news at once) / {op:"remove", key}; returns
+fresh dashboard data. UI: × on each tile (admin only), "+ Dashboard mein add karein" under a share/index quote.
+Old articles are kept on remove (re-adding brings them back). /api/data cache lowered to 60 s.
+
+## Index options / F&O (2026-11-05)
+`lib/options.mjs`: daily NFO list (Kite /instruments/NFO, 9 s timeout, Blobs cache `kite-nfo-v1`, also pre-warmed by the
+hourly collect when Zerodha is logged in) filtered to BANKNIFTY/NIFTY/FINNIFTY/MIDCPNIFTY CE/PE, expired contracts hidden.
+Symbols "BANKNIFTY26NOV52000CE.NFO" (toKite -> NFO:...). Search understands "banknifty 52000 ce", "bank nifty pe dec".
+/api/price for options = Zerodha only, adds `option` meta (strike, expiry, type, lot_size). New /api/chain?u=&expiry=
+(spot via /quote/ltp, ±10 strikes, one /quote call). UI: public/chain.mjs (option chain modal; click LTP opens contract),
+"option chain dekhein" button on index/option quotes, option ticket in lots (NRML/MIS).
+Order safety: options OFF unless Order relay card field allow_fno = yes; max_lots (default 1); value limit on premium;
+qty = lots x lot_size from the NFO list; SELL only up to the net quantity held (Kite /portfolio/positions) -> no writing.
+Relay accepts exchange NFO with NRML/MIS (shares still CNC/MIS). THE DEPLOYED RELAY MUST BE UPDATED for NFO orders:
+Cloud Shell `cd sentiment-barometer && git pull && bash relay/setup.sh` (keeps the current secret). Zerodha account needs
+the F&O segment active. Tested offline (44 unit tests) + browser suites with a fake Kite/relay; NOT yet against real Kite NFO.
+
 ## Seen on the live site (user screenshot, 2026-11-04)
 - Site loads. "Not updated yet" (hourly collect had not run yet). Price search: "Yahoo answered 429" (Yahoo rate-limits
   Netlify's servers). Added a retry on query2.finance.yahoo.com; may still fail -> real fix is the Zerodha price source.

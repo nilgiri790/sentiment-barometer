@@ -104,11 +104,29 @@ input,select{font:inherit;color:var(--ink)}
 .field,.search input,.kfields input,.kfields select,.login input,.row select,.sel{height:36px;padding:0 11px;border-radius:var(--r-sm);border:1px solid var(--line-2);background:var(--surface-2);color:var(--ink);font:500 13px var(--font);transition:border-color .15s,box-shadow .15s;width:100%}
 .field:focus,.search input:focus,.kfields input:focus,.kfields select:focus,.login input:focus,.row select:focus,.sel:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .sel{width:auto;height:30px;padding:0 8px;font-size:12px}
-.search{display:flex;gap:8px}
+.search{display:flex;gap:8px;position:relative}
 .search input{flex:1;min-width:0}
-.search .in{position:relative;flex:1;min-width:0}
+.search .in{position:static;flex:1;min-width:0}
 .search .in svg{position:absolute;left:10px;top:10px;width:16px;height:16px;color:var(--muted);pointer-events:none}
 .search .in input{padding-left:34px}
+.ac{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:25;background:var(--raise);border:1px solid var(--line-2);border-radius:var(--r);box-shadow:var(--shadow);max-height:340px;overflow:auto;padding:4px;animation:fade .1s ease-out}
+.ac .it{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r-sm);cursor:pointer}
+.ac .it.sel,.ac .it:hover{background:var(--hover)}
+.ac .it .s{font-weight:600;font-size:13px;white-space:nowrap}
+.ac .it .n{flex:1;min-width:0;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ac .it mark{background:none;color:var(--accent);font-weight:700}
+.ac .msg{padding:10px;font-size:12px;color:var(--muted)}
+.p-opt{background:var(--accent-soft);color:var(--accent)}
+.optline{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:var(--text-2)}
+.modal.chain-modal{max-width:920px}
+.chain td,.chain th{white-space:nowrap}
+.chain th.c,.chain td.c{text-align:center}
+.chain td{padding:7px 12px;vertical-align:middle}
+.chain td.strike{font-weight:700;white-space:nowrap}
+.chain tr.atm td{background:var(--accent-soft)}
+.chain td.itm{background:color-mix(in srgb,var(--warn) 8%,transparent)}
+.ltpbtn{border:0;background:none;color:var(--ink);font:600 13px var(--font);font-variant-numeric:tabular-nums;cursor:pointer;padding:3px 7px;border-radius:3px}
+.ltpbtn:hover{background:var(--accent-soft);color:var(--accent)}
 .seg{display:inline-flex;padding:2px;gap:2px;border:1px solid var(--line-2);border-radius:var(--r-sm);background:var(--surface-2)}
 .seg button{height:26px;padding:0 10px;border:0;border-radius:3px;background:transparent;color:var(--text-2);font:600 12px var(--font);cursor:pointer;transition:background .15s,color .15s}
 .seg button:hover{color:var(--ink)}
@@ -134,8 +152,16 @@ input,select{font:inherit;color:var(--ink)}
 .sc{display:block;width:100%;padding:12px 12px 11px;text-align:left;font:inherit;color:inherit;cursor:pointer;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);transition:border-color .15s,background .15s}
 .sc:hover{background:var(--surface-2);border-color:var(--line-2)}
 .sc.on{border-color:var(--accent);background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--accent)}
+.sc{position:relative}
 .sc .top{display:flex;justify-content:space-between;align-items:center;gap:6px}
-.sc .name{font-weight:600;font-size:12px;letter-spacing:.03em;color:var(--text-2)}
+.sc .x{position:absolute;top:-8px;right:-8px;width:22px;height:22px;border-radius:50%;border:1px solid var(--line-2);background:var(--raise);color:var(--muted);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;opacity:.8;transition:opacity .15s,color .15s,background .15s,border-color .15s;z-index:2}
+.sc .x svg{width:11px;height:11px}
+.sc .x:hover,.sc .x:focus-visible{opacity:1;color:#fff;background:var(--neg);border-color:var(--neg)}
+.cards{padding-top:8px;margin-top:-8px}
+.addbtn{width:100%;margin-top:10px}
+.toast2{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--raise);color:var(--ink);border:1px solid var(--line-2);box-shadow:var(--shadow);padding:10px 14px;border-radius:var(--r);font-size:13px;z-index:50;max-width:calc(100% - 32px);animation:tin .18s ease-out}
+@media(max-width:760px){.toast2{bottom:84px}.sc .x{opacity:1}}
+.sc .name{font-weight:600;font-size:12px;letter-spacing:.03em;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .sc .num{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:6px 0 8px;font-variant-numeric:tabular-nums;line-height:1}
 .meter{position:relative;height:4px;border-radius:2px;background:var(--line)}
 .meter::after{content:"";position:absolute;left:50%;top:-2px;width:1px;height:8px;background:var(--line-2)}
@@ -314,7 +340,7 @@ html.theming *,html.theming *::before{transition:none !important}
     <section class="panel quote">
       <div class="panel-h"><h2>Quote</h2><span class="right label">Live price search</span></div>
       <div class="panel-b">
-        <form class="search" id="sform"><div class="in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="q" placeholder="Search stock: ITC, SBIN, Tata Steel" autocomplete="off" spellcheck="false"></div><button>Search</button></form>
+        <form class="search" id="sform"><div class="in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="q" placeholder="Search: ITC, Bank Nifty, banknifty 52000 ce" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-controls="ac" aria-expanded="false"><div class="ac" id="ac" role="listbox" hidden></div></div><button>Search</button></form>
         <div id="sres"><div class="note">Kisi bhi NSE/BSE stock ka daam, chart aur Buy/Sell yahan.</div></div>
       </div>
     </section>
@@ -335,6 +361,7 @@ html.theming *,html.theming *::before{transition:none !important}
 <script type="module">
 import { showKeys } from "./keys.mjs";
 import { mountTrade, tradingState } from "./trade.mjs";
+import { openChain, UNDERLYING_OF } from "./chain.mjs";
 function route(){
   const keys = location.hash.startsWith("#/keys");
   $("view-dash").hidden = keys; $("view-keys").hidden = !keys;
@@ -342,7 +369,7 @@ function route(){
   $("ptitle").textContent = keys ? "API Keys" : "Dashboard";
   document.querySelectorAll(".dash-only").forEach(el => el.hidden = keys);
   if (keys) showKeys($("view-keys"), { onCollected: () => load() });
-  else tradingState(true);
+  else refreshAdmin();
   window.scrollTo(0, 0);
 }
 window.addEventListener("hashchange", route);
@@ -352,7 +379,18 @@ const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;
 const cls = v => v >= 15 ? "pos" : v <= -15 ? "neg" : "neu";
 const sign = v => (v > 0 ? "+" : "") + Math.round(v);
 const fmt = v => v == null ? "–" : v.toLocaleString("en-IN", {minimumFractionDigits: 2, maximumFractionDigits: 2});
-let DATA, cur, days = 3;
+let DATA, cur, days = 3, isAdmin = false;
+function refreshAdmin(){ tradingState(true).then(st => { const a = !!st?.loggedIn; if (a !== isAdmin) { isAdmin = a; if (DATA && !$("view-dash").hidden) render(); } }); }
+function toast(msg){ const t = document.createElement("div"); t.className = "toast2"; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 3500); }
+async function watch(body){
+  const r = await fetch("/api/admin/watch", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || ("Error " + r.status));
+  DATA = d.data; if (!DATA.stocks[cur]) cur = Object.keys(DATA.stocks)[0]; render(); return d;
+}
+async function removeStock(k){
+  if (!confirm(`${k} ko dashboard se hata dein? (Purani news safe rahegi, dobara add karne par wapas aa jaayegi.)`)) return;
+  try { await watch({ op: "remove", key: k }); toast(`${k} dashboard se hata diya.`); } catch (e) { toast(e.message); }
+}
 const prices = {};
 
 // ---- theme toggle (presentation only) ----
@@ -431,6 +469,11 @@ function chart(daily, price){
 function render(){
   const w = DATA.weights, since = sinceIso(days), S = DATA.stocks;
   const sum = Object.fromEntries(Object.entries(S).map(([k,s]) => [k, barometer(s.headlines.filter(h => h.published >= since), w)]));
+  if (!Object.keys(S).length){
+    $("main").innerHTML = `<div class="card empty"><b>Dashboard par abhi koi stock nahi hai</b>Quote panel mein koi share ya index search kariye aur <b style="display:inline">+ Dashboard mein add karein</b> dabaiye.${isAdmin ? "" : ` (Pehle <a href="#/keys">API Keys</a> mein login kariye.)`}</div>`;
+    return;
+  }
+  if (!S[cur]) cur = Object.keys(S)[0];
   const total = Object.values(S).reduce((a,s) => a + s.headlines.length, 0);
   if (!total){
     $("main").innerHTML = `<div class="card empty"><b>Abhi koi news collect nahi hui</b>Har ghante news apne aap aati hai. Turant chahiye to <a href="#/keys">API Keys</a> mein login karke <b style="display:inline">Run now</b> dabaiye.</div>`;
@@ -440,11 +483,12 @@ function render(){
   const meter = v => { const c = v>=15?"var(--pos)":v<=-15?"var(--neg)":"var(--text-2)", x = Math.max(-100, Math.min(100, v));
     return `<div class="meter"><i style="background:${c};${x>=0?`left:50%;width:${x/2}%`:`left:${50+x/2}%;width:${-x/2}%`}"></i></div>`; };
   $("main").innerHTML = `
-    <div class="cards">${Object.entries(sum).map(([k,v]) => `<button class="sc${k===cur?" on":""}" data-k="${k}">
+    <div class="cards">${Object.entries(sum).map(([k,v]) => `<div class="sc${k===cur?" on":""}" data-k="${esc(k)}" role="button" tabindex="0" aria-pressed="${k===cur}">
+      ${isAdmin ? `<button class="x" type="button" data-rm="${esc(k)}" aria-label="${esc(k)} hataiye" title="Dashboard se hataiye"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M7 7l10 10M17 7L7 17"/></svg></button>` : ""}
       <div class="top"><span class="name">${esc(k)}</span><span class="pill p-${cls(v.score)}">${labelFor(v.score)}</span></div>
       <div class="num" style="color:var(--${cls(v.score)==="neu"?"ink":cls(v.score)})">${sign(v.score)}</div>
       ${meter(v.score)}
-      <div class="small"><span>${v.count} news</span><span><span class="up">+${v.positive}</span> / <span class="down">−${v.negative}</span></span></div></button>`).join("")}</div>
+      <div class="small"><span>${v.count} news</span><span><span class="up">+${v.positive}</span> / <span class="down">−${v.negative}</span></span></div></div>`).join("")}</div>
     <div class="grid">
       <section class="panel"><div class="panel-h"><h2>${esc(cur)}</h2><span class="right"><span class="pill p-${cls(b.score)}">${labelFor(b.score)}</span></span></div>
         <div class="panel-b" style="padding:18px 22px 8px">${gauge(b.score)}</div>
@@ -461,7 +505,11 @@ function render(){
         <td><a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.title)}</a><div class="src">${esc(h.source)}</div></td>
         <td class="hide-m src when">${ago(h.published)}</td><td class="hide-m src">${esc(h.reason)}</td></tr>`).join("") || `<tr><td colspan="4" class="empty">Is stock ki abhi koi headline nahi hai.</td></tr>`}
       </tbody></table></div></section>`;
-  document.querySelectorAll(".sc").forEach(el => el.onclick = () => { cur = el.dataset.k; render(); });
+  document.querySelectorAll(".sc").forEach(el => {
+    el.onclick = () => { cur = el.dataset.k; render(); };
+    el.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); cur = el.dataset.k; render(); } };
+  });
+  document.querySelectorAll(".sc .x").forEach(b => b.onclick = e => { e.stopPropagation(); removeStock(b.dataset.rm); });
   const draw = () => { const c = $("chart"); if (c) c.innerHTML = chart(dailySeries(s.headlines, w), prices[s.ticker]); };
   draw();
   if (!(s.ticker in prices)) {
@@ -477,6 +525,7 @@ async function load(){
     DATA = await r.json();
   } catch (e) { $("main").innerHTML = `<div class="card empty"><b>Data load nahi ho paya</b>(${esc(e.message)}) Page refresh karke dekhein.</div>`; return; }
   cur ??= Object.keys(DATA.stocks)[0];
+  refreshAdmin();
   $("updated").textContent = DATA.updated ? "Updated " + ago(DATA.updated) : "Not updated yet";
   $("livedot").classList.toggle("live", !!DATA.updated && Date.now() - new Date(DATA.updated) < 2 * 36e5);
   $("engine").textContent = DATA.engine ? "Scoring · " + (DATA.engine === "keyword" ? "keyword (simple)" : DATA.engine) : "";
@@ -490,21 +539,89 @@ setInterval(load, 10 * 60 * 1000);
 
 // ---- live price search ----
 let pick = null, span = "1d", timer = null;
-$("sform").onsubmit = async e => {
-  e.preventDefault();
-  const q = $("q").value.trim(); if (!q) return;
-  $("sres").innerHTML = `<div class="sk" style="height:36px;margin-top:10px"></div><div class="sk" style="height:200px;margin-top:12px"></div>`;
+// ---- suggestions while typing (uses the same /api/search) ----
+const acBox = $("ac"), qIn = $("q"), acCache = new Map();
+let acItems = [], acSel = -1, acT = null, acSeq = 0;
+const plain = s => String(s).replace(/\.(NS|BO)$/i, "");
+const hiQ = (text, q) => { const t = String(text ?? ""), i = t.toUpperCase().indexOf(q.toUpperCase());
+  return i < 0 || !q ? esc(t) : esc(t.slice(0, i)) + "<mark>" + esc(t.slice(i, i + q.length)) + "</mark>" + esc(t.slice(i + q.length)); };
+async function suggest(q){
+  const key = q.toUpperCase(); if (acCache.has(key)) return acCache.get(key);
   let list = [];
   try { const r = await fetch(`/api/search?q=${encodeURIComponent(q)}`); if (r.ok) list = await r.json(); } catch {}
-  if (!list.length) { const s = q.toUpperCase().replace(/\s+/g, ""); list = [{symbol:s+".NS",name:"",exchange:"NSE"},{symbol:s+".BO",name:"",exchange:"BSE"},{symbol:s,name:"",exchange:""}]; }
-  $("sres").innerHTML = `<div class="row"><select id="pick">${list.map(o => `<option value="${esc(o.symbol)}">${esc(o.symbol)}  ·  ${esc(o.name)}  ·  ${esc(o.exchange)}</option>`).join("")}</select>
+  acCache.set(key, list); return list;
+}
+function acShow(on){ acBox.hidden = !on; qIn.setAttribute("aria-expanded", on ? "true" : "false"); }
+function acRender(q){
+  if (!acItems.length) { acBox.innerHTML = `<div class="msg">"${esc(q)}" se koi match nahi mila. Enter dabakar seedha symbol try karein.</div>`; return acShow(true); }
+  acBox.innerHTML = acItems.map((o, i) => `<div class="it${i === acSel ? " sel" : ""}" role="option" data-i="${i}" aria-selected="${i === acSel}">
+      <span class="s">${o.option ? esc(o.name) : hiQ(plain(o.symbol), q)}</span><span class="n">${o.option ? `Lot ${esc(o.lot_size)}` : hiQ(o.name, q)}</span>
+      <span class="pill ${o.index ? "p-soon" : o.option ? "p-opt" : "p-neu"}">${o.index ? "INDEX" : o.option ? "OPTION" : esc(o.exchange || "")}</span></div>`).join("");
+  acShow(true);
+  acBox.querySelector(".sel")?.scrollIntoView({ block: "nearest" });
+}
+qIn.addEventListener("input", () => {
+  clearTimeout(acT); const q = qIn.value.trim();
+  if (!q) { acItems = []; acShow(false); return; }
+  acT = setTimeout(async () => {
+    const my = ++acSeq; if (acBox.hidden) { acBox.innerHTML = `<div class="msg">Dhoondh rahe hain…</div>`; acShow(true); }
+    const list = await suggest(q); if (my !== acSeq || qIn.value.trim() !== q) return;   // a newer search is running
+    acItems = list.slice(0, 10); acSel = acItems.length ? 0 : -1; acRender(q);
+  }, 160);
+});
+qIn.addEventListener("keydown", e => {
+  if (acBox.hidden || !acItems.length) { if (e.key === "Escape") acShow(false); return; }
+  if (e.key === "ArrowDown") { e.preventDefault(); acSel = (acSel + 1) % acItems.length; acRender(qIn.value.trim()); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); acSel = (acSel - 1 + acItems.length) % acItems.length; acRender(qIn.value.trim()); }
+  else if (e.key === "Escape") acShow(false);
+});
+acBox.addEventListener("mousedown", e => { const it = e.target.closest(".it"); if (!it) return; e.preventDefault(); acSel = +it.dataset.i; choose(); });
+qIn.addEventListener("blur", () => setTimeout(() => acShow(false), 120));
+qIn.addEventListener("focus", () => { if (acItems.length && qIn.value.trim()) acRender(qIn.value.trim()); });
+function choose(){
+  const o = acItems[acSel]; if (!o) return;
+  acShow(false); qIn.value = o.option ? o.name : plain(o.symbol); openQuote(acItems, o.symbol);
+}
+
+// ---- open the price view for a list of matches (from typing or the Search button) ----
+let pickInfo = {};
+function openQuote(list, chosen){
+  pickInfo = Object.fromEntries(list.map(o => [o.symbol, o]));
+  $("sres").innerHTML = `<div class="row"><select id="pick">${list.map(o => `<option value="${esc(o.symbol)}"${o.symbol === chosen ? " selected" : ""}>${esc(o.option ? o.name : o.symbol)}  ·  ${esc(o.option ? "NFO option" : o.name)}  ·  ${esc(o.index ? "INDEX" : o.exchange)}</option>`).join("")}</select>
     <div class="seg" id="span">${["1d","5d","1mo"].map(x => `<button type="button" data-s="${x}" class="${x===span?"on":""}">${{"1d":"1D","5d":"5D","1mo":"1M"}[x]}</button>`).join("")}</div>
     <label class="check" style="margin-left:auto"><input type="checkbox" id="auto"> Auto-refresh 1 min</label></div><div id="pbox"><div class="sk" style="height:260px;margin-top:12px"></div></div>`;
   $("pick").onchange = () => { pick = $("pick").value; showPrice(); };
   $("span").onclick = ev => { const b = ev.target.closest("button"); if (!b) return; span = b.dataset.s; $("span").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); showPrice(); };
+  clearInterval(timer);
   $("auto").onchange = ev => { clearInterval(timer); if (ev.target.checked) timer = setInterval(showPrice, 60000); };
-  pick = list[0].symbol; showPrice();
+  pick = chosen; showPrice();
+}
+
+$("sform").onsubmit = async e => {
+  e.preventDefault();
+  if (!acBox.hidden && acItems[acSel]) return choose();          // Enter on a highlighted suggestion
+  const q = qIn.value.trim(); if (!q) return;
+  clearTimeout(acT); acSeq++; acShow(false);
+  $("sres").innerHTML = `<div class="sk" style="height:36px;margin-top:10px"></div><div class="sk" style="height:200px;margin-top:12px"></div>`;
+  let list = await suggest(q);
+  if (!list.length) { const s = q.toUpperCase().replace(/\s+/g, ""); list = [{symbol:s+".NS",name:"",exchange:"NSE"},{symbol:s+".BO",name:"",exchange:"BSE"},{symbol:s,name:"",exchange:""}]; }
+  openQuote(list, list[0].symbol);
 };
+
+// "+ Dashboard mein add karein" for shares and indices (admin only; options cannot be added)
+function mountAdd(box, p){
+  if (!isAdmin || p.option || !/\.(NS|BO)$/i.test(p.symbol)) return;
+  const key = p.symbol.replace(/\.(NS|BO)$/i, "").toUpperCase(), have = !!DATA?.stocks?.[key];
+  const b = document.createElement("button"); b.type = "button"; b.className = "btn2 addbtn";
+  b.innerHTML = have ? "✓ Dashboard par hai" : "+ Dashboard mein add karein"; b.disabled = have;
+  b.onclick = async () => {
+    b.disabled = true; b.textContent = "Add ho raha hai… (news la rahe hain)";
+    try { await watch({ op: "add", symbol: p.symbol, name: pickInfo[p.symbol]?.name || "", index: !!p.index }); cur = key; render();
+      b.textContent = "✓ Dashboard par hai"; toast(`${key} dashboard par add ho gaya. Iski news har ghante aayegi.`); }
+    catch (e) { b.disabled = false; b.innerHTML = "+ Dashboard mein add karein"; toast(e.message); }
+  };
+  box.appendChild(b);
+}
 
 async function showPrice(){
   const box = $("pbox"); if (!box) return;
@@ -516,10 +633,12 @@ async function showPrice(){
   const X = i => L+i*(W-L-R)/Math.max(1,p.points.length-1), Y = v => T+(H-T-B)*(1-(v-mn)/rg);
   const pts = p.points.map((x,i)=>`${X(i)},${Y(x[1])}`).join(" ");
   const col = up ? "var(--pos)" : "var(--neg)", gid = "qg" + (up ? "u" : "d");
+  const und = p.option ? p.option.underlying : p.index ? UNDERLYING_OF[p.symbol.replace(/\.(NS|BO)$/i, "")] : null;
   box.innerHTML = `<div class="metrics">
-      <div><div class="sym">${esc(p.symbol)}</div><div class="ltp">${fmt(p.last)}</div></div>
+      <div><div class="sym">${esc(p.option ? p.option.name : p.symbol)}</div><div class="ltp">${fmt(p.last)}</div></div>
       ${chg!=null?`<div class="chg ${chg>=0?"up":"down"}" style="text-align:right">${chg>=0?"▲ +":"▼ "}${fmt(chg)}<br>(${chg>=0?"+":""}${(chg/p.prevClose*100).toFixed(2)}%)</div>`:"<div></div>"}</div>
     <div class="hl"><div><span>High</span><b>${fmt(p.high)}</b></div><div><span>Low</span><b>${fmt(p.low)}</b></div><div><span>Prev close</span><b>${fmt(p.prevClose)}</b></div></div>
+    ${p.option ? `<div class="optline"><span class="pill p-opt">${p.option.type === "CE" ? "CALL" : "PUT"}</span><span>Strike <b>${p.option.strike}</b></span><span>Expiry <b>${esc(p.option.expiry)}</b></span><span>Lot <b>${p.option.lot_size}</b></span></div>` : ""}
     <div class="qchart" id="qchart"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
       <defs><linearGradient id="${gid}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${col}" stop-opacity=".22"/><stop offset="1" stop-color="${col}" stop-opacity="0"/></linearGradient></defs>
       ${p.prevClose ? `<line x1="0" x2="${W}" y1="${Y(p.prevClose)}" y2="${Y(p.prevClose)}" stroke="var(--muted)" stroke-dasharray="3 4" vector-effect="non-scaling-stroke" stroke-width="1"/>` : ""}
@@ -528,6 +647,7 @@ async function showPrice(){
       <line id="qx" x1="0" x2="0" y1="0" y2="${H}" stroke="var(--line-2)" vector-effect="non-scaling-stroke" visibility="hidden"/>
     </svg></div>
     ${p.notice ? `<div class="kres bad">${esc(p.notice)}</div>` : ""}
+    ${und ? `<button class="btn2" id="chainbtn" type="button" style="width:100%;margin-top:12px">${esc(und)} option chain dekhein</button>` : ""}
     <div class="note src-line"><span class="pill ${p.source === "Zerodha" ? "p-pos" : "p-neu"}">${p.source === "Zerodha" ? "Zerodha · real-time" : "Yahoo · ~15 min late"}</span><span>Updated ${new Date().toLocaleTimeString()} · Not investment advice.</span></div>`;
   // crosshair + tooltip on the quote chart
   const qc = $("qchart"), qx = qc.querySelector("#qx");
@@ -538,7 +658,10 @@ async function showPrice(){
     showTip(`<div class='t'>${when(p.points[i][0])}</div><b>₹${fmt(p.points[i][1])}</b>`, e.clientX, e.clientY);
   };
   qc.onmouseleave = () => { qx.setAttribute("visibility", "hidden"); hideTip(); };
+  if (und) $("chainbtn").onclick = () => openChain(und, { onPick: (sym, name) => {
+    qIn.value = name; openQuote([{ symbol: sym, name, exchange: "NFO", option: true }], sym); } });
   mountTrade(box, p);
+  mountAdd(box, p);
 }
 </script>
 </body>

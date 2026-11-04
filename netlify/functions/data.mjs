@@ -3,6 +3,6 @@ import { getStore } from "@netlify/blobs";
 import { dashboardData } from "../../lib/pipeline.mjs";
 
 export default async () =>
-  Response.json(await dashboardData(getStore("sentiment")), { headers: { "cache-control": "public, max-age=300" } });
+  Response.json(await dashboardData(getStore("sentiment")), { headers: { "cache-control": "public, max-age=60" } });
 
 export const config = { path: "/api/data" };
