@@ -42,6 +42,7 @@
   --side-w:216px; --top-h:56px;
 }
 *{box-sizing:border-box}
+[hidden]{display:none !important}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font:400 14px/1.5 var(--font);font-feature-settings:"cv11","ss01";-webkit-font-smoothing:antialiased}
 a{color:inherit}
@@ -146,9 +147,67 @@ input,select{font:inherit;color:var(--ink)}
 .up{color:var(--pos)}.down{color:var(--neg)}.flat{color:var(--text-2)}
 
 /* ---- Dashboard layout ---- */
-.dash{display:grid;gap:14px;grid-template-columns:minmax(0,1fr);grid-template-areas:"quote" "main"}
-.dash .quote{grid-area:quote}.dash .dmain{grid-area:main;min-width:0}
-@media(min-width:1180px){.dash{grid-template-columns:minmax(0,1fr) 380px;grid-template-areas:"main quote";align-items:start}.dash .quote{position:sticky;top:calc(var(--top-h) + 18px)}}
+.dash{max-width:1040px;margin:0 auto}
+.quick{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:14px}
+@media(min-width:900px){.qchart,.qchart svg{height:320px !important}.quote .metrics .ltp{font-size:34px}}
+.btn2.sm,.btn.sm{height:28px;padding:0 10px;font-size:12px}
+.icon-btn.sm{width:28px;height:28px;font-size:16px;line-height:1}
+.scanbar{margin-bottom:14px}
+.pick{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:12px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2)}
+.pick .who{display:flex;align-items:center;gap:10px;min-width:0}
+.pick .who b{font-size:15px}.pick .who .n{color:var(--text-2);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pick .acts{display:flex;gap:8px;flex-wrap:wrap}
+.report{margin-bottom:14px}
+.steps{display:grid;gap:10px}
+.steps div{display:flex;align-items:center;gap:10px;color:var(--muted)}
+.steps i{width:14px;height:14px;border-radius:50%;border:2px solid var(--line-2);flex:none}
+.steps .run{color:var(--ink)}.steps .run i{border-color:var(--accent);border-right-color:transparent;animation:spin .8s linear infinite}
+.steps .done{color:var(--text-2)}.steps .done i{background:var(--pos);border-color:var(--pos)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.rgrid{display:grid;gap:18px;grid-template-columns:minmax(0,1fr)}
+@media(min-width:900px){.rgrid{grid-template-columns:minmax(0,1fr) 240px}}
+.rsum{margin:0 0 14px;font-size:14px;line-height:1.6;color:var(--ink)}
+.rcols{display:grid;gap:14px;grid-template-columns:minmax(0,1fr)}
+@media(min-width:700px){.rcols{grid-template-columns:1fr 1fr}}
+.rl{margin:6px 0 0;padding-left:18px;font-size:13px;line-height:1.55;color:var(--text-2)}
+.rl li{margin:3px 0}.rl.pos li::marker{color:var(--pos)}.rl.neg li::marker{color:var(--neg)}
+.themes{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}
+.rside{border-left:1px solid var(--line);padding-left:18px}
+@media(max-width:899px){.rside{border-left:0;padding-left:0;border-top:1px solid var(--line);padding-top:14px}}
+.rscore{font-size:40px;font-weight:600;letter-spacing:-.02em;line-height:1.1;margin:4px 0 6px;font-variant-numeric:tabular-nums}
+.rstats{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:12px;font-size:12px;color:var(--text-2)}
+.btbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.btbar .search{flex:1;min-width:260px}
+#view-bt>section,#view-bt>.grid2{margin-bottom:14px}
+#btchart{height:440px;position:relative}
+@media(max-width:760px){#btchart{height:340px}}
+.btlegend{display:flex;gap:12px;flex-wrap:wrap;padding:8px 14px 0;font-size:12px;color:var(--text-2)}.btlegend b{color:var(--ink);font-weight:600}
+#btchartp .ltp{font-size:16px;font-weight:600}#btchartp .chg{font-size:12px;font-weight:600}
+.bt2{grid-template-columns:minmax(0,1fr)}@media(min-width:1100px){.bt2{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
+.kvg{display:grid;grid-template-columns:auto 1fr auto 1fr;gap:8px 14px;font-size:13px}.kvg span{color:var(--muted)}.kvg b{font-weight:600;font-variant-numeric:tabular-nums}.kvg small{color:var(--muted);font-weight:400}
+@media(max-width:600px){.kvg{grid-template-columns:auto 1fr}}
+.lf{display:block}.lf .label{display:block;margin-bottom:5px}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-top:10px}
+.ta{height:auto;padding:9px 11px;line-height:1.5;resize:vertical;min-height:72px;font-weight:400}
+.rules{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px;padding:10px 12px;border:1px dashed var(--line-2);border-radius:var(--r);font-size:13px;color:var(--text-2)}
+.rules .label{display:block;margin-bottom:4px}
+@media(max-width:600px){.rules{grid-template-columns:1fr}}
+.mgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.mc{border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;background:var(--surface-2)}.mc span{display:block;font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.04em;text-transform:uppercase}.mc b{font-size:18px;font-weight:600;font-variant-numeric:tabular-nums}
+#btequity{height:200px;position:relative}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.answer{margin-top:12px;font-size:14px;line-height:1.6;color:var(--text-2)}
+.answer h4{margin:14px 0 4px;color:var(--ink);font-size:14px}.answer ul{margin:4px 0;padding-left:20px}.answer p{margin:6px 0}
+.answer .qa{border-left:3px solid var(--accent);padding:2px 0 2px 10px;margin-bottom:10px}.answer .qa p{margin:2px 0;color:var(--ink)}
+#settings{margin-top:14px;scroll-margin-top:calc(var(--top-h) + 12px)}
+.sgrid{display:grid;gap:16px 20px;grid-template-columns:repeat(auto-fill,minmax(230px,1fr))}
+.sf .label{margin-bottom:6px}.sf .seg{display:flex}.sf .seg button{flex:1}.sf .field{max-width:140px}
+.sf .seg button[disabled]{cursor:not-allowed;opacity:.6}
+.switch{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;cursor:pointer}
+.switch input{position:absolute;opacity:0;width:0;height:0}
+.switch span{width:36px;height:20px;border-radius:10px;background:var(--line-2);position:relative;transition:background .15s}
+.switch span::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .15s}
+.switch input:checked + span{background:var(--pos)}.switch input:checked + span::after{transform:translateX(16px)}
+.switch input:focus-visible + span{outline:2px solid var(--accent);outline-offset:2px}
 
 /* Barometer tiles */
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(138px,1fr));gap:10px;margin-bottom:14px}
@@ -301,7 +360,7 @@ html.theming *,html.theming *::before{transition:none !important}
   .topbar{padding:0 14px;gap:10px}
   .tb-meta .chip.eng{display:none}
   .topbar h1{display:none}
-  .dash-only .label{display:none}
+  .sent-only .label{display:none}
   .tb-meta{flex:1}.tb-meta .chip{max-width:100%;overflow:hidden;text-overflow:ellipsis}
   .wrap{padding:14px 14px 24px}
   .cards{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;margin:0 -14px 14px;padding:0 14px 4px;scrollbar-width:none}
@@ -326,14 +385,16 @@ html.theming *,html.theming *::before{transition:none !important}
   </div>
   <a class="nav" href="#/" data-v="dash"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span>Dashboard</span></a>
   <a class="nav" href="#/keys" data-v="keys"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2L20 3m-3 3l3 3m-6 0l2 2"/></svg><span>API Keys</span></a>
+  <a class="nav" href="#/sentiment" data-v="sent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 16a8 8 0 0116 0"/><path d="M12 16l4-5"/><circle cx="12" cy="16" r="1.4"/></svg><span>Sentiment</span></a>
+  <a class="nav" href="#/backtest" data-v="bt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 15l3-4 3 2 5-7"/><circle cx="18" cy="6" r="1.3"/></svg><span>Backtest</span></a>
   <div class="foot">Sentiment is a signal to study, not investment advice.</div>
 </aside>
 <main>
 <header class="topbar">
   <h1 id="ptitle">Dashboard</h1>
-  <div class="tb-meta"><span class="chip"><i class="dot" id="livedot"></i><span id="updated">Loading…</span></span><span class="chip eng" id="engine"></span></div>
+  <div class="tb-meta sent-only" hidden><span class="chip"><i class="dot" id="livedot"></i><span id="updated">Loading…</span></span><span class="chip eng" id="engine"></span></div>
   <div class="tb-actions">
-    <label class="dash-only" title="Look-back"><span class="label" style="margin-right:6px">Look-back</span><select id="days" class="sel"><option value="1">1D</option><option value="3" selected>3D</option><option value="7">7D</option><option value="14">14D</option></select></label>
+    <label class="sent-only" title="Look-back" hidden><span class="label" style="margin-right:6px">Look-back</span><select id="days" class="sel"><option value="1">1D</option><option value="3" selected>3D</option><option value="7">7D</option><option value="14">14D</option></select></label>
     <button class="icon-btn" id="theme" type="button" aria-label="Light / dark mode" title="Light / dark mode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg></button>
   </div>
 </header>
@@ -344,20 +405,33 @@ html.theming *,html.theming *::before{transition:none !important}
       <div class="panel-h"><h2>Quote</h2><span class="right"><span class="label" id="qlabel">Live price search</span><a class="btn2 launch" id="qlaunch" target="_blank" rel="noopener" hidden title="Naye page mein live chart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>Launch chart</a></span></div>
       <div class="panel-b">
         <form class="search" id="sform"><div class="in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="q" placeholder="Search: ITC, Bank Nifty, banknifty 52000 ce" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-controls="ac" aria-expanded="false"><div class="ac" id="ac" role="listbox" hidden></div></div><button>Search</button></form>
-        <div id="sres"><div class="note">Kisi bhi NSE/BSE stock ka daam, chart aur Buy/Sell yahan.</div></div>
+        <div id="sres"><div class="note">Kisi bhi NSE/BSE share, index ya option ka live daam, chart, option chain aur Buy/Sell yahan.</div>
+          <div class="quick"><span class="label">Jaldi kholiye</span><button type="button" class="btn2 sm" data-quick="NIFTY 50">NIFTY 50</button><button type="button" class="btn2 sm" data-quick="banknifty">BANK NIFTY</button><button type="button" class="btn2 sm" data-quick="RELIANCE">RELIANCE</button><button type="button" class="btn2 sm" data-quick="HDFC BANK">HDFC BANK</button><button type="button" class="btn2 sm" data-quick="ITC">ITC</button></div></div>
       </div>
     </section>
-    <div class="dmain">
-      <div id="main">
-        <div class="cards"><div class="sk" style="height:96px"></div><div class="sk" style="height:96px"></div><div class="sk" style="height:96px"></div><div class="sk" style="height:96px"></div><div class="sk" style="height:96px"></div></div>
-        <div class="grid"><div class="sk" style="height:300px"></div><div class="sk" style="height:300px"></div></div>
-        <div class="sk" style="height:320px"></div>
-      </div>
-      <footer>Sentiment is one signal, not a guarantee. This is not investment advice.</footer>
-    </div>
   </div>
+  <footer>Prices: Zerodha (live) / Yahoo. Not investment advice.</footer>
 </div>
 <div class="wrap" id="view-keys" hidden></div>
+<div class="wrap" id="view-bt" hidden></div>
+<div class="wrap" id="view-sent" hidden>
+  <div class="page-head"><div><h1>Sentiment Barometer</h1><p class="sub">News se trust vs lack of trust. Ek signal jise study karna hai, investment advice nahi.</p></div>
+    <button class="btn2" type="button" id="gosettings"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 01-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 010-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 014 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 010 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>Settings</button></div>
+  <section class="panel scanbar">
+    <div class="panel-b">
+      <form class="search" id="sform2"><div class="in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="q2" placeholder="Share ya index search kariye: ITC, HDFC Bank, Bank Nifty" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-controls="ac2" aria-expanded="false"><div class="ac" id="ac2" role="listbox" hidden></div></div><button>Search</button></form>
+      <div id="spick"><div class="note">Search karke <b>Scan news</b> dabaiye: AI taaza khabrein padh kar report banayega. Ya <b>+ List mein add</b> karke har ghante ki news collect kariye.</div></div>
+    </div>
+  </section>
+  <div id="report"></div>
+  <div id="main">
+    <div class="cards"><div class="sk" style="height:96px"></div><div class="sk" style="height:96px"></div><div class="sk" style="height:96px"></div><div class="sk" style="height:96px"></div><div class="sk" style="height:96px"></div></div>
+    <div class="grid"><div class="sk" style="height:300px"></div><div class="sk" style="height:300px"></div></div>
+    <div class="sk" style="height:320px"></div>
+  </div>
+  <section class="panel" id="settings"></section>
+  <footer>Sentiment is one signal, not a guarantee. This is not investment advice.</footer>
+</div>
 </main>
 </div>
 <div class="tip" id="tip"></div>
@@ -366,13 +440,15 @@ import { showKeys } from "./keys.mjs";
 import { mountTrade, tradingState } from "./trade.mjs";
 import { openChain, UNDERLYING_OF } from "./chain.mjs";
 function route(){
-  const keys = location.hash.startsWith("#/keys");
-  $("view-dash").hidden = keys; $("view-keys").hidden = !keys;
-  document.querySelectorAll(".nav").forEach(a => a.classList.toggle("on", a.dataset.v === (keys ? "keys" : "dash")));
-  $("ptitle").textContent = keys ? "API Keys" : "Dashboard";
-  document.querySelectorAll(".dash-only").forEach(el => el.hidden = keys);
-  if (keys) showKeys($("view-keys"), { onCollected: () => load() });
+  const h = location.hash, v = h.startsWith("#/keys") ? "keys" : h.startsWith("#/sentiment") ? "sent" : h.startsWith("#/backtest") ? "bt" : "dash";
+  $("view-dash").hidden = v !== "dash"; $("view-keys").hidden = v !== "keys"; $("view-sent").hidden = v !== "sent"; $("view-bt").hidden = v !== "bt";
+  document.querySelectorAll(".nav").forEach(a => a.classList.toggle("on", a.dataset.v === v));
+  $("ptitle").textContent = { dash: "Dashboard", keys: "API Keys", sent: "Sentiment", bt: "Backtest" }[v];
+  document.querySelectorAll(".sent-only").forEach(el => el.hidden = v !== "sent");
+  if (v === "keys") showKeys($("view-keys"), { onCollected: () => load() });
   else refreshAdmin();
+  if (v === "sent" && DATA) { render(); settingsPanel(); }
+  if (v === "bt") openBacktest();
   window.scrollTo(0, 0);
 }
 window.addEventListener("hashchange", route);
@@ -383,7 +459,7 @@ const cls = v => v >= 15 ? "pos" : v <= -15 ? "neg" : "neu";
 const sign = v => (v > 0 ? "+" : "") + Math.round(v);
 const fmt = v => v == null ? "–" : v.toLocaleString("en-IN", {minimumFractionDigits: 2, maximumFractionDigits: 2});
 let DATA, cur, days = 3, isAdmin = false;
-function refreshAdmin(){ tradingState(true).then(st => { const a = !!st?.loggedIn; if (a !== isAdmin) { isAdmin = a; if (DATA && !$("view-dash").hidden) render(); } }); }
+function refreshAdmin(){ tradingState(true).then(st => { const a = !!st?.loggedIn; if (a !== isAdmin) { isAdmin = a; if (DATA) { render(); settingsPanel(); pickPanel(); } btMod?.onShowBacktest(); } }); }
 function toast(msg){ const t = document.createElement("div"); t.className = "toast2"; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 3500); }
 async function watch(body){
   const r = await fetch("/api/admin/watch", { method: "POST", credentials: "same-origin", cache: "no-store",
@@ -500,7 +576,7 @@ function render(){
       ${meter(v.score)}
       <div class="small"><span>${v.count} news</span><span><span class="up">+${v.positive}</span> / <span class="down">−${v.negative}</span></span></div></div>`).join("")}</div>
     <div class="grid">
-      <section class="panel"><div class="panel-h"><h2>${esc(cur)}</h2><span class="right"><span class="pill p-${cls(b.score)}">${labelFor(b.score)}</span></span></div>
+      <section class="panel"><div class="panel-h"><h2>${esc(cur)}</h2><span class="right"><span class="pill p-${cls(b.score)}">${labelFor(b.score)}</span>${isAdmin ? `<button class="btn2 sm" type="button" id="scancur" title="AI news report">Scan news</button>` : ""}</span></div>
         <div class="panel-b" style="padding:18px 22px 8px">${gauge(b.score)}</div>
         <div class="stats"><div><b>${b.count}</b><span>Headlines</span></div><div><b class="up">${b.positive}</b><span>Positive</span></div><div><b class="down">${b.negative}</b><span>Negative</span></div><div><b>${b.neutral}</b><span>Neutral</span></div></div>
       </section>
@@ -520,6 +596,7 @@ function render(){
     el.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); cur = el.dataset.k; render(); } };
   });
   document.querySelectorAll(".sc .x").forEach(b => b.onclick = e => { e.stopPropagation(); removeStock(b.dataset.rm); });
+  if ($("scancur")) $("scancur").onclick = () => { setTarget({ symbol: s.ticker, name: s.name || cur, index: !!s.index }); runScan(); };
   const draw = () => { const c = $("chart"); if (c) c.innerHTML = chart(dailySeries(s.headlines, w), prices[s.ticker]); };
   draw();
   if (!(s.ticker in prices)) {
@@ -529,29 +606,177 @@ function render(){
   }
 }
 
+// ================= Sentiment page: search -> Scan news -> AI report, + Settings =================
+let target = null;                                     // {symbol, name, index} chosen in the Sentiment search
+const keyOf = sym => plain(sym).toUpperCase();
+const qIn2 = $("q2");
+const ac2 = makeAC(qIn2, $("ac2"), { filter: o => !o.option, onChoose: o => { qIn2.value = plain(o.symbol); setTarget(o); } });
+$("sform2").onsubmit = async e => {
+  e.preventDefault();
+  if (ac2.openWithSel()) return ac2.pickSel();
+  const q = qIn2.value.trim(); if (!q) return; ac2.cancel();
+  const list = (await suggest(q)).filter(o => !o.option);
+  if (list.length) { qIn2.value = plain(list[0].symbol); setTarget(list[0]); }
+  else $("spick").innerHTML = `<div class="kres bad">"${esc(q)}" nahi mila. Naam thoda alag likh kar try kariye.</div>`;
+};
+$("gosettings").onclick = () => $("settings").scrollIntoView({ behavior: "smooth", block: "start" });
+
+function setTarget(o){
+  target = { symbol: o.symbol, name: o.name || plain(o.symbol), index: !!o.index };
+  pickPanel(); loadSavedReport();
+}
+function pickPanel(){
+  if (!target) return;
+  const key = keyOf(target.symbol), inList = !!DATA?.stocks?.[key];
+  $("spick").innerHTML = `<div class="pick">
+      <div class="who"><b>${esc(key)}</b><span class="n">${esc(target.name)}</span><span class="pill ${target.index ? "p-soon" : "p-neu"}">${target.index ? "INDEX" : esc(target.symbol.endsWith(".BO") ? "BSE" : "NSE")}</span></div>
+      <div class="acts">${isAdmin ? `
+        <button class="btn" type="button" id="doscan"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5M8 11h6M11 8v6"/></svg>Scan news</button>
+        ${inList ? `<button class="btn2" type="button" id="viewin">Barometer dekhein</button>` : `<button class="btn2" type="button" id="addin">+ List mein add</button>`}`
+        : `<span class="note" style="margin:0">Scan aur list ke liye <a href="#/keys">API Keys</a> mein login kariye.</span>`}</div></div>`;
+  if ($("doscan")) $("doscan").onclick = runScan;
+  if ($("addin")) $("addin").onclick = async () => {
+    const b = $("addin"); b.disabled = true; b.textContent = "Add ho raha hai… (news la rahe hain)";
+    try { await watch({ op: "add", symbol: target.symbol, name: target.name, index: target.index }); cur = key; render(); pickPanel(); toast(`${key} list mein add ho gaya. Iski news har ghante aayegi.`); }
+    catch (e) { b.disabled = false; b.textContent = "+ List mein add"; toast(e.message); }
+  };
+  if ($("viewin")) $("viewin").onclick = () => { cur = key; render(); $("main").scrollIntoView({ behavior: "smooth", block: "start" }); };
+}
+async function adminGet(path){ const r = await fetch("/api/admin/" + path, { cache: "no-store", credentials: "same-origin" }); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || `Error ${r.status}`); return d; }
+async function adminPost(path, body){
+  const r = await fetch("/api/admin/" + path, { method: "POST", cache: "no-store", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const txt = await r.text(); let d = {}; try { d = JSON.parse(txt); } catch {}
+  if (r.status === 401) { isAdmin = false; pickPanel(); settingsPanel(); throw new Error((d.error || "Login session nahi mila (401).") + " API Keys mein Logout → Login karke dobara try kariye."); }
+  if (!r.ok) throw new Error(d.error || `Error ${r.status}` + (txt && !d.error ? ` [${txt.replace(/\s+/g, " ").slice(0, 80)}]` : ""));
+  return d;
+}
+async function loadSavedReport(){
+  if (!isAdmin || !target) { $("report").innerHTML = ""; return; }
+  const key = keyOf(target.symbol);
+  try { const d = await adminGet("report?key=" + encodeURIComponent(key)); if (target && keyOf(target.symbol) === key) $("report").innerHTML = d.report ? reportHtml(d.report, true) : ""; wireReport(); } catch {}
+}
+let scanning = false;
+async function runScan(){
+  if (!target || scanning) return; scanning = true;
+  const key = keyOf(target.symbol), steps = (a, b, msg = "") => `<section class="panel report"><div class="panel-h"><h2>AI news report · ${esc(key)}</h2></div><div class="panel-b">
+      <div class="steps"><div class="${a}"><i></i>1. Taaza khabrein la rahe hain aur har headline ko score kar rahe hain</div><div class="${b}"><i></i>2. AI report likh raha hai</div></div>${msg}</div></section>`;
+  $("report").innerHTML = steps("run", ""); $("report").scrollIntoView({ behavior: "smooth", block: "start" });
+  document.querySelectorAll("#doscan,#scancur").forEach(b => b.disabled = true);
+  try {
+    const { scan } = await adminPost("scan", { step: "news", symbol: target.symbol, name: target.name, index: target.index });
+    $("report").innerHTML = steps("done", "run", `<div class="note">${scan.headlines.length} khabrein mili · barometer ${scan.barometer.score > 0 ? "+" : ""}${scan.barometer.score} (${esc(scan.barometer.label)})</div>`);
+    const { report } = await adminPost("scan", { step: "report", key: scan.key });
+    $("report").innerHTML = reportHtml(report, false); wireReport();
+  } catch (e) {
+    $("report").innerHTML = `<section class="panel report"><div class="panel-h"><h2>AI news report · ${esc(key)}</h2></div><div class="panel-b"><div class="kres bad">Scan nahi hua: ${esc(e.message)}</div></div></section>`;
+  }
+  scanning = false; document.querySelectorAll("#doscan,#scancur").forEach(b => b.disabled = false);
+}
+const OVERALL = { positive: ["p-pos", "Positive"], negative: ["p-neg", "Negative"], mixed: ["p-soon", "Mixed"], neutral: ["p-neu", "Neutral"] };
+function reportHtml(r, saved){
+  const [oc, ol] = OVERALL[r.report.overall] || OVERALL.mixed, b = r.barometer;
+  const list = (arr, c) => arr?.length ? `<ul class="rl ${c}">${arr.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : `<div class="note">–</div>`;
+  return `<section class="panel report"><div class="panel-h"><h2>AI news report · ${esc(r.key)}</h2>
+      <span class="right"><span class="pill ${oc}">${ol}</span><span class="label">${saved ? "Pichhli report · " : ""}${esc(ago(r.reportAt))}</span>
+      <button class="btn2 sm" type="button" data-rescan>${saved ? "Naya scan" : "Dobara scan"}</button><button class="icon-btn sm" type="button" data-close aria-label="Band karein">×</button></span></div>
+    <div class="panel-b rgrid">
+      <div class="rmain">
+        <p class="rsum">${esc(r.report.summary)}</p>
+        <div class="rcols"><div><div class="label up">Positive baatein</div>${list(r.report.positives, "pos")}</div><div><div class="label down">Negative / risk</div>${list(r.report.negatives, "neg")}</div></div>
+        ${r.report.watch?.length ? `<div class="label" style="margin-top:12px">Kya dhyan rakhein</div>${list(r.report.watch, "")}` : ""}
+        ${r.report.themes?.length ? `<div class="themes">${r.report.themes.map(t => `<span class="pill p-opt">${esc(t)}</span>`).join("")}</div>` : ""}
+        ${r.note ? `<div class="note">${esc(r.note)}</div>` : ""}
+      </div>
+      <div class="rside">
+        <div class="label">News barometer</div>
+        <div class="rscore" style="color:var(--${cls(b.score) === "neu" ? "ink" : cls(b.score)})">${b.score > 0 ? "+" : ""}${b.score}</div>
+        <span class="pill p-${cls(b.score)}">${esc(b.label)}</span>
+        <div class="rstats"><span><b>${b.count}</b> khabrein</span><span class="up"><b>${b.positive}</b> positive</span><span class="down"><b>${b.negative}</b> negative</span><span><b>${b.neutral}</b> neutral</span></div>
+        <div class="note">Scoring: ${esc(r.engine === "keyword" ? "keyword (simple)" : r.engine)} · Report: ${esc(r.reportEngine === "simple" ? "simple" : r.reportEngine)} · Pichhle ${esc(r.window)}</div>
+      </div>
+    </div>
+    <div class="scroll" style="max-height:340px"><table class="tbl"><thead><tr><th class="r">Score</th><th>Headline</th><th class="hide-m">Time</th></tr></thead><tbody>
+      ${r.headlines.map(h => `<tr><td class="s" style="color:var(--${h.score > 0.15 ? "pos" : h.score < -0.15 ? "neg" : "muted"})">${h.score > 0 ? "+" : ""}${Number(h.score).toFixed(2)}</td>
+        <td><a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.title)}</a><div class="src">${esc(h.source)}${h.reason ? " · " + esc(h.reason) : ""}</div></td>
+        <td class="hide-m src when">${h.published ? ago(h.published) : ""}</td></tr>`).join("")}</tbody></table></div>
+    <div class="panel-b note" style="margin:0;border-top:1px solid var(--line)">Ye report sirf news headlines par aadharit hai. Ye investment advice nahi hai.</div></section>`;
+}
+function wireReport(){
+  $("report").querySelector("[data-rescan]")?.addEventListener("click", runScan);
+  $("report").querySelector("[data-close]")?.addEventListener("click", () => ($("report").innerHTML = ""));
+}
+
+// ---- Settings ----
+function settingsPanel(){
+  const s = DATA?.settings; if (!s) return;
+  const dis = isAdmin ? "" : "disabled";
+  const seg = (k, opts) => `<div class="seg" data-seg="${k}">${opts.map(([v, l]) => `<button type="button" data-v="${v}" class="${String(s[k]) === String(v) ? "on" : ""}" ${dis}>${l}</button>`).join("")}</div>`;
+  $("settings").innerHTML = `<div class="panel-h"><h2>Settings</h2><span class="right label">${isAdmin ? "Badlav ke baad Save dabaiye" : "Badalne ke liye admin login chahiye"}</span></div>
+    <div class="panel-b"><div class="sgrid">
+      <div class="sf"><div class="label">News ki bhasha</div>${seg("newsLang", [["en", "English"], ["hi", "Hindi"]])}<div class="note">Google News kis bhasha ki khabrein de</div></div>
+      <div class="sf"><div class="label">Kitne din ki news</div>${seg("newsWindow", [["1d", "1 din"], ["3d", "3 din"], ["7d", "7 din"]])}<div class="note">Har collection mein kitni purani khabrein</div></div>
+      <div class="sf"><div class="label">Max news har stock</div><input class="field" type="number" min="10" max="100" step="5" id="set-max" value="${s.maxArticles}" ${dis}><div class="note">10 se 100 tak</div></div>
+      <div class="sf"><div class="label">Har ghante auto collection</div><label class="switch"><input type="checkbox" id="set-auto" ${s.autoCollect ? "checked" : ""} ${dis}><span></span>${s.autoCollect ? "On" : "Off"}</label><div class="note">Off karne par sirf "Run now" / Scan se news aayegi</div></div>
+      <div class="sf"><div class="label">Default look-back</div>${seg("lookback", [[1, "1D"], [3, "3D"], [7, "7D"], [14, "14D"]])}<div class="note">Page khulte hi kitne din ka barometer</div></div>
+      <div class="sf"><div class="label">AI report ki bhasha</div>${seg("reportLang", [["hinglish", "Hinglish"], ["english", "English"], ["hindi", "हिंदी"]])}</div>
+      <div class="sf"><div class="label">AI report</div>${seg("reportLength", [["short", "Chhoti"], ["detailed", "Detail mein"]])}</div>
+      <div class="sf"><div class="label">AI model</div><div class="note" style="margin-top:6px">Claude key aur model <a href="#/keys">API Keys</a> mein badliye. Abhi: ${esc(DATA.engine || "–")}</div></div>
+    </div>
+    <div class="kbtns">${isAdmin ? `<button class="btn" type="button" id="set-save">Save settings</button><button class="btn2" type="button" id="set-run">Sabki news abhi collect karein</button><span class="note" id="set-msg" style="margin:0"></span>` : `<a class="btn2" href="#/keys">Admin login</a>`}</div></div>`;
+  const draft = { ...s };
+  $("settings").querySelectorAll("[data-seg]").forEach(g => g.onclick = e => { const b = e.target.closest("button"); if (!b || b.disabled) return;
+    draft[g.dataset.seg] = g.dataset.seg === "lookback" ? +b.dataset.v : b.dataset.v; g.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); });
+  const auto = $("set-auto"); if (auto) auto.onchange = () => { draft.autoCollect = auto.checked; auto.parentElement.lastChild.textContent = auto.checked ? "On" : "Off"; };
+  if ($("set-save")) $("set-save").onclick = async () => {
+    draft.maxArticles = +$("set-max").value; const b = $("set-save"); b.disabled = true;
+    try { const d = await adminPost("settings", { settings: draft }); DATA.settings = d.settings;
+      if (!daysTouched) { days = d.settings.lookback; $("days").value = String(days); render(); }
+      settingsPanel(); toast("Settings save ho gayi."); } catch (e) { b.disabled = false; toast(e.message); }
+  };
+  if ($("set-run")) $("set-run").onclick = async () => {
+    const b = $("set-run"); b.disabled = true; b.textContent = "Collect ho rahi hai… (10 second tak)";
+    try { const d = await adminPost("collect", {}); const ok = d.results.filter(r => !r.error);
+      await load();                                   // redraws the page (and this panel)
+      toast(`News collect ho gayi: ${ok.length}/${d.results.length} stocks, ${ok.reduce((a, r) => a + r.new, 0)} nayi khabrein.`); }
+    catch (e) { toast(e.message); b.disabled = false; b.textContent = "Sabki news abhi collect karein"; }
+  };
+}
+
+// ---- Backtest page (code loads only when the page is opened) ----
+let btMod = null;
+async function openBacktest(){
+  if (!btMod) {
+    $("view-bt").innerHTML = `<div class="sk" style="height:90px;margin-bottom:14px"></div><div class="sk" style="height:420px"></div>`;
+    try { btMod = await import("./backtest.mjs"); }
+    catch (e) { $("view-bt").innerHTML = `<div class="card empty"><b>Backtest page load nahi hua</b>${esc(e.message)}</div>`; return; }
+    btMod.mountBacktest($("view-bt"), { makeAC, suggest, adminPost, toast, isAdmin: () => isAdmin });
+  } else btMod.onShowBacktest();
+}
+
 async function load(){
   try {
     const r = await fetch("/api/data"); if (!r.ok) throw new Error(r.status);
     DATA = await r.json();
   } catch (e) { $("main").innerHTML = `<div class="card empty"><b>Data load nahi ho paya</b>(${esc(e.message)}) Page refresh karke dekhein.</div>`; return; }
   cur ??= Object.keys(DATA.stocks)[0];
-  refreshAdmin();
+  if (!daysTouched && DATA.settings?.lookback) { days = DATA.settings.lookback; $("days").value = String(days); }
+  refreshAdmin(); settingsPanel(); pickPanel();
   $("updated").textContent = DATA.updated ? "Updated " + ago(DATA.updated) : "Not updated yet";
   $("livedot").classList.toggle("live", !!DATA.updated && Date.now() - new Date(DATA.updated) < 2 * 36e5);
   $("engine").textContent = DATA.engine ? "Scoring · " + (DATA.engine === "keyword" ? "keyword (simple)" : DATA.engine) : "";
   render();
 }
-$("days").onchange = e => { days = +e.target.value; render(); };
-let rsz; window.addEventListener("resize", () => { clearTimeout(rsz); rsz = setTimeout(() => { if (DATA && !$("view-dash").hidden) render(); }, 200); });
+let daysTouched = false;
+$("days").onchange = e => { days = +e.target.value; daysTouched = true; render(); };
+let rsz; window.addEventListener("resize", () => { clearTimeout(rsz); rsz = setTimeout(() => { if (DATA && !$("view-sent").hidden) render(); }, 200); });
 load();
 route();
 setInterval(load, 10 * 60 * 1000);
 
 // ---- live price search ----
 let pick = null, span = "1d", timer = null;
-// ---- suggestions while typing (uses the same /api/search) ----
-const acBox = $("ac"), qIn = $("q"), acCache = new Map();
-let acItems = [], acSel = -1, acT = null, acSeq = 0;
+// ---- suggestions while typing (uses the same /api/search); one helper for both search boxes ----
+const acCache = new Map();
 const plain = s => String(s).replace(/\.(NS|BO)$/i, "");
 const hiQ = (text, q) => { const t = String(text ?? ""), i = t.toUpperCase().indexOf(q.toUpperCase());
   return i < 0 || !q ? esc(t) : esc(t.slice(0, i)) + "<mark>" + esc(t.slice(i, i + q.length)) + "</mark>" + esc(t.slice(i + q.length)); };
@@ -561,37 +786,42 @@ async function suggest(q){
   try { const r = await fetch(`/api/search?q=${encodeURIComponent(q)}`); if (r.ok) list = await r.json(); } catch {}
   acCache.set(key, list); return list;
 }
-function acShow(on){ acBox.hidden = !on; qIn.setAttribute("aria-expanded", on ? "true" : "false"); }
-function acRender(q){
-  if (!acItems.length) { acBox.innerHTML = `<div class="msg">"${esc(q)}" se koi match nahi mila. Enter dabakar seedha symbol try karein.</div>`; return acShow(true); }
-  acBox.innerHTML = acItems.map((o, i) => `<div class="it${i === acSel ? " sel" : ""}" role="option" data-i="${i}" aria-selected="${i === acSel}">
-      <span class="s">${o.option ? esc(o.name) : hiQ(plain(o.symbol), q)}</span><span class="n">${o.option ? `Lot ${esc(o.lot_size)}` : hiQ(o.name, q)}</span>
-      <span class="pill ${o.index ? "p-soon" : o.option ? "p-opt" : "p-neu"}">${o.index ? "INDEX" : o.option ? "OPTION" : esc(o.exchange || "")}</span></div>`).join("");
-  acShow(true);
-  acBox.querySelector(".sel")?.scrollIntoView({ block: "nearest" });
+function makeAC(qIn, acBox, { onChoose, filter = () => true }){
+  let items = [], sel = -1, timerId = null, seq = 0;
+  const show = on => { acBox.hidden = !on; qIn.setAttribute("aria-expanded", on ? "true" : "false"); };
+  const draw = q => {
+    if (!items.length) { acBox.innerHTML = `<div class="msg">"${esc(q)}" se koi match nahi mila. Enter dabakar seedha symbol try karein.</div>`; return show(true); }
+    acBox.innerHTML = items.map((o, i) => `<div class="it${i === sel ? " sel" : ""}" role="option" data-i="${i}" aria-selected="${i === sel}">
+        <span class="s">${o.option ? esc(o.name) : hiQ(plain(o.symbol), q)}</span><span class="n">${o.option ? `Lot ${esc(o.lot_size)}` : hiQ(o.name, q)}</span>
+        <span class="pill ${o.index ? "p-soon" : o.option ? "p-opt" : "p-neu"}">${o.index ? "INDEX" : o.option ? "OPTION" : esc(o.exchange || "")}</span></div>`).join("");
+    show(true); acBox.querySelector(".sel")?.scrollIntoView({ block: "nearest" });
+  };
+  const pickSel = () => { const o = items[sel]; if (!o) return false; show(false); onChoose(o, items); return true; };
+  qIn.addEventListener("input", () => {
+    clearTimeout(timerId); const q = qIn.value.trim();
+    if (!q) { items = []; show(false); return; }
+    timerId = setTimeout(async () => {
+      const my = ++seq; if (acBox.hidden) { acBox.innerHTML = `<div class="msg">Dhoondh rahe hain…</div>`; show(true); }
+      const list = (await suggest(q)).filter(filter); if (my !== seq || qIn.value.trim() !== q) return;   // a newer search is running
+      items = list.slice(0, 10); sel = items.length ? 0 : -1; draw(q);
+    }, 160);
+  });
+  qIn.addEventListener("keydown", e => {
+    if (acBox.hidden || !items.length) { if (e.key === "Escape") show(false); return; }
+    if (e.key === "ArrowDown") { e.preventDefault(); sel = (sel + 1) % items.length; draw(qIn.value.trim()); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); sel = (sel - 1 + items.length) % items.length; draw(qIn.value.trim()); }
+    else if (e.key === "Escape") show(false);
+  });
+  acBox.addEventListener("mousedown", e => { const it = e.target.closest(".it"); if (!it) return; e.preventDefault(); sel = +it.dataset.i; pickSel(); });
+  qIn.addEventListener("blur", () => setTimeout(() => show(false), 120));
+  qIn.addEventListener("focus", () => { if (items.length && qIn.value.trim()) draw(qIn.value.trim()); });
+  return {
+    openWithSel: () => !acBox.hidden && !!items[sel], pickSel,
+    cancel: () => { clearTimeout(timerId); seq++; show(false); },
+  };
 }
-qIn.addEventListener("input", () => {
-  clearTimeout(acT); const q = qIn.value.trim();
-  if (!q) { acItems = []; acShow(false); return; }
-  acT = setTimeout(async () => {
-    const my = ++acSeq; if (acBox.hidden) { acBox.innerHTML = `<div class="msg">Dhoondh rahe hain…</div>`; acShow(true); }
-    const list = await suggest(q); if (my !== acSeq || qIn.value.trim() !== q) return;   // a newer search is running
-    acItems = list.slice(0, 10); acSel = acItems.length ? 0 : -1; acRender(q);
-  }, 160);
-});
-qIn.addEventListener("keydown", e => {
-  if (acBox.hidden || !acItems.length) { if (e.key === "Escape") acShow(false); return; }
-  if (e.key === "ArrowDown") { e.preventDefault(); acSel = (acSel + 1) % acItems.length; acRender(qIn.value.trim()); }
-  else if (e.key === "ArrowUp") { e.preventDefault(); acSel = (acSel - 1 + acItems.length) % acItems.length; acRender(qIn.value.trim()); }
-  else if (e.key === "Escape") acShow(false);
-});
-acBox.addEventListener("mousedown", e => { const it = e.target.closest(".it"); if (!it) return; e.preventDefault(); acSel = +it.dataset.i; choose(); });
-qIn.addEventListener("blur", () => setTimeout(() => acShow(false), 120));
-qIn.addEventListener("focus", () => { if (acItems.length && qIn.value.trim()) acRender(qIn.value.trim()); });
-function choose(){
-  const o = acItems[acSel]; if (!o) return;
-  acShow(false); qIn.value = o.option ? o.name : plain(o.symbol); openQuote(acItems, o.symbol);
-}
+const qIn = $("q");
+const ac1 = makeAC(qIn, $("ac"), { onChoose: (o, items) => { qIn.value = o.option ? o.name : plain(o.symbol); openQuote(items, o.symbol); } });
 
 // ---- open the price view for a list of matches (from typing or the Search button) ----
 let pickInfo = {};
@@ -607,11 +837,12 @@ function openQuote(list, chosen){
   pick = chosen; showPrice();
 }
 
+document.querySelectorAll("[data-quick]").forEach(b => b.onclick = () => { qIn.value = b.dataset.quick; $("sform").requestSubmit(); });
 $("sform").onsubmit = async e => {
   e.preventDefault();
-  if (!acBox.hidden && acItems[acSel]) return choose();          // Enter on a highlighted suggestion
+  if (ac1.openWithSel()) return ac1.pickSel();                    // Enter on a highlighted suggestion
   const q = qIn.value.trim(); if (!q) return;
-  clearTimeout(acT); acSeq++; acShow(false);
+  ac1.cancel();
   $("sres").innerHTML = `<div class="sk" style="height:36px;margin-top:10px"></div><div class="sk" style="height:200px;margin-top:12px"></div>`;
   let list = await suggest(q);
   if (!list.length) { const s = q.toUpperCase().replace(/\s+/g, ""); list = [{symbol:s+".NS",name:"",exchange:"NSE"},{symbol:s+".BO",name:"",exchange:"BSE"},{symbol:s,name:"",exchange:""}]; }
@@ -623,12 +854,12 @@ function mountAdd(box, p){
   if (!isAdmin || p.option || !/\.(NS|BO)$/i.test(p.symbol)) return;
   const key = p.symbol.replace(/\.(NS|BO)$/i, "").toUpperCase(), have = !!DATA?.stocks?.[key];
   const b = document.createElement("button"); b.type = "button"; b.className = "btn2 addbtn";
-  b.innerHTML = have ? "✓ Dashboard par hai" : "+ Dashboard mein add karein"; b.disabled = have;
+  b.innerHTML = have ? "✓ Sentiment list mein hai" : "+ Sentiment list mein add karein"; b.disabled = have;
   b.onclick = async () => {
     b.disabled = true; b.textContent = "Add ho raha hai… (news la rahe hain)";
     try { await watch({ op: "add", symbol: p.symbol, name: pickInfo[p.symbol]?.name || "", index: !!p.index }); cur = key; render();
-      b.textContent = "✓ Dashboard par hai"; toast(`${key} dashboard par add ho gaya. Iski news har ghante aayegi.`); }
-    catch (e) { b.disabled = false; b.innerHTML = "+ Dashboard mein add karein"; toast(e.message); }
+      b.textContent = "✓ Sentiment list mein hai"; toast(`${key} Sentiment list mein add ho gaya. Iski news har ghante aayegi.`); }
+    catch (e) { b.disabled = false; b.innerHTML = "+ Sentiment list mein add karein"; toast(e.message); }
   };
   box.appendChild(b);
 }

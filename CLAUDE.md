@@ -90,7 +90,7 @@ Old articles are kept on remove (re-adding brings them back). /api/data cache lo
 
 Live issue 2026-11-05: pressing × gave a bare "Error 401" (no JSON error) and the card stayed. Our handlers always send
 {error:"..."} with 401, and an earlier GET /api/admin/status (which never returns 401) also showed a bare 401 once, fixed
-by a hard refresh -> something in front of the function (or a stale session) answers 401. Pending fix (not pushed yet):
+by a hard refresh -> something in front of the function (or a stale session) answers 401. Fix shipped 2026-11-05 (live site then showed × working):
 dashboard/keys fetches read text, show the raw reply in the message, and on 401 hide admin buttons + ask to Logout/Login.
 
 ## Index options / F&O (2026-11-05)
@@ -118,6 +118,38 @@ Not admin or no Zerodha login -> "Delayed · 20s refresh" polling of /api/candle
 (intraday, resets per IST day), Bollinger 20,2; types Candles/Hollow/Line/Area; crosshair OHLCV legend; fit; full screen;
 theme shared with the site. Chart times are shifted +5:30 so the axis shows India time. `?wsurl=` test hook works on
 localhost only. Tested with a fake Kite WebSocket (binary packets) + 52 unit tests; NOT yet against the real ws.kite.trade.
+
+## Sentiment page split (2026-11-05)
+Sidebar: Dashboard, API Keys, Sentiment (#/sentiment). Dashboard = Quote panel only (wider, 320 px chart, quick-open chips:
+NIFTY 50 / BANK NIFTY / RELIANCE / HDFC BANK / ITC), quote "add" button now says "+ Sentiment list mein add karein".
+Sentiment page (#view-sent): its own type-ahead search (shares/indices only; shared makeAC helper also drives the Quote box),
+chosen-stock bar with "Scan news" + "+ List mein add"/"Barometer dekhein", AI report panel, the barometer (tiles with ×,
+gauge with a "Scan news" button, chart, headlines) and a Settings panel. Look-back select + news-update chips show only here.
+Scan news = two admin calls (Netlify ~10 s limit): POST /api/admin/scan {step:"news", symbol, name, index} -> lib/scan.mjs
+scanNews (Google News up to 30, Claude scoring with a 6.5 s budget, keyword for the rest, barometer; Blobs `scan-<KEY>`),
+then {step:"report", key} -> makeReport (one Claude call, JSON {overall, summary, positives, negatives, themes, watch},
+8.5 s timeout; simple counts-based report when no key / unreadable answer; Blobs `report-<KEY>`). GET /api/admin/report?key=
+returns the saved one ("Pichhli report"). Settings: lib/settings.mjs, Blobs `settings` in store `sentiment`
+{newsLang en|hi, newsWindow 1d|3d|7d, maxArticles 10..100, autoCollect, lookback 1|3|7|14, reportLang hinglish|english|hindi,
+reportLength short|detailed}; POST /api/admin/settings (admin); /api/data includes them; hourly collect skips when
+autoCollect is off; fetchStockNews takes {lang, window, max}. Global CSS `[hidden]{display:none !important}`.
+Tested: 58 unit tests; browser suites (stand-in server with fake Kite/Claude/news): sent 26, regress 44, ac 12, watch 17,
+s401 5, fno 17+2, chart 15 — all pass. Runner: scratchpad tools/runall.sh (not in the repo).
+
+## Backtest page (2026-11-05)
+Sidebar item "Backtest" below Sentiment (#/backtest, #view-bt). public/backtest.mjs is lazy-loaded (dynamic import) and
+gets {makeAC, suggest, adminPost, toast, isAdmin} from index.html. Search (shares, indices, options) + timeframe 1D/1h/15m/
+5m/1m -> /api/candles (Kite limits: 1D ~2 years, 1h 120 days, 15m 45, 5m 15, 1m 4) -> Lightweight Charts candles + volume,
+OHLCV legend, data summary (period, change, high/low with dates, max drawdown, volatility, avg volume, SMA50/200),
+last 30 candles table, CSV download. Create strategy: templates (SMA/EMA crossover, RSI, breakout, Bollinger) with params,
+or "AI se banaiye" -> POST /api/admin/ai {mode:"strategy"} (lib/aianalyze.mjs; Claude returns strategy JSON, validated by
+validateStrategy; never code). Risk inputs: stop-loss %, target %, max hold candles, capital, cost % per side.
+Engine public/btengine.mjs (also used server-side): long only, signal on close -> fill next open, SL/TP intrabar
+(stop first), costs, equity + stats (return, buy&hold, trades, win rate, avg win/loss, profit factor, max DD, exposure).
+Results: B/S/SL/T markers + strategy MAs/bands on the chart, equity curve vs buy&hold, trades table. Last AI strategy kept in
+localStorage `sb-bt-strategy`. "AI se poochhiye": quick prompts + textarea -> POST /api/admin/ai {mode:"analyze", stats,
+candles (last 400), backtest summary, prompt}; answer language/length from Sentiment settings; tiny safe markdown render.
+Tested: 65 unit tests (engine, validation, AI prompt/strategy); browser bt suite 16/16 + all earlier suites pass.
 
 ## Seen on the live site (user screenshot, 2026-11-04)
 - Site loads. "Not updated yet" (hourly collect had not run yet). Price search: "Yahoo answered 429" (Yahoo rate-limits

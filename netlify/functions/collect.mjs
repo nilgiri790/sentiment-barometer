@@ -4,10 +4,13 @@ import { runAll, scoringOptions } from "../../lib/pipeline.mjs";
 import { loadSecrets, runtimeEnv } from "../../lib/secrets.mjs";
 import { kiteReady } from "../../lib/prices.mjs";
 import { nfoList } from "../../lib/options.mjs";
+import { getSettings } from "../../lib/settings.mjs";
 
 export default async () => {
   const secrets = await loadSecrets(getStore({ name: "admin", consistency: "strong" }));
-  await runAll(getStore({ name: "sentiment", consistency: "strong" }), scoringOptions(secrets, runtimeEnv()));
+  const data = getStore({ name: "sentiment", consistency: "strong" });
+  if ((await getSettings(data)).autoCollect) await runAll(data, scoringOptions(secrets, runtimeEnv()));
+  else console.log("auto collection is off (Sentiment page settings)");
   if (kiteReady(secrets.kite)) { try { await nfoList(secrets.kite, getStore("cache")); } catch (e) { console.log("options list:", e.message); } }
 };
 
