@@ -1,4 +1,5 @@
-// Scalping terminal: option search -> live chart (Zerodha ticks) + market depth + BUY with automatic target / stop-loss.
+// Scalping terminal for BANK NIFTY / NIFTY: index chart + option chart, the whole option chain (live OI / IV / delta),
+// an AI that picks one strike, market depth and BUY with automatic target / stop-loss.
 // Loaded only when the page is opened. The bracket logic is ./scalpengine.mjs and runs IN THIS BROWSER TAB:
 // orders go through /api/admin/order (+ order-change for cancel / price change), order status comes from
 // Zerodha's WebSocket order updates and /api/admin/order-status polling. Page closed = no stop-loss management.
@@ -7,6 +8,9 @@ import { parseTicks, applyTick, barsFromTicks, IST, orderUpdate } from "./kiteti
 import { Bracket, checkPlan, tickFloor, LIVE } from "./scalpengine.mjs";
 import { mountTrade, tradingState } from "./trade.mjs";
 import { mountAI, AI_CSS } from "./scalpai.mjs";
+import { optionCharges } from "./charges.mjs";
+import { mountChain, CHAIN_CSS, INDICES, indexOfSymbol } from "./scalpchain.mjs";
+import { contractGreeks } from "./optanalytics.mjs";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const f2 = (v) => (v == null || !Number.isFinite(+v) ? "–" : (+v).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
@@ -20,93 +24,179 @@ const WSBASE = (location.hostname === "localhost" && new URLSearchParams(locatio
 const KEY = "sb-scalp";
 const STATE_TXT = { idle: "Taiyaar", entry_open: "Entry order khula hai", active: "Position chalu · target laga hai", sl_armed: "SL chalu: target cancel ho raha hai",
   sl_open: "Stop-loss order laga hai", done: "Poora hua", error: "Dhyan dijiye", stopped: "Managing band" };
+const EMPTY_OPT = `<div class="empty sp-empty">Neeche <b>option chain</b> mein kisi strike ka <b>CE</b> ya <b>PE</b> daam dabaiye, ya AI se <b>Scan trade</b> karwaiye. Option ka chart, depth aur order yahan khulenge.</div>`;
 
 let H, root, chart = null, main = null, vol = null, plines = [];
 let target = null, tf = TFS[3], bars = [], ticks = [], ltp = null, bid = null, ask = null, depth = null, prevClose = null, lastCum = null;
 let ws = null, wsLive = false, retry = 0, subSet = new Set(), extraToks = [], ltpTimer = null, candleTimer = null, pollTimer = null, polling = false, pollN = 0;
-let ai = null, engine = null, ctx = null, limits = null, trading = null, confirming = false;
+let ai = null, market = null, engine = null, ctx = null, limits = null, trading = null, confirming = false;
+// index (BANK NIFTY / NIFTY) chart
+let IDX = "BANKNIFTY", ich = null, imain = null, ibars = [], iticks = [], ilines = [], ilineKey = "";
+try { const k = localStorage.getItem(KEY + "-index"); if (INDICES[k]) IDX = k; } catch {}
 // form: offsets are kept when the entry price changes (user's example: +10 target, -7 trigger, -6 SL limit)
 const F = { lots: 1, entry: null, target: null, trig: null, sl: null, chase: 30, product: "MIS", oneClick: false, off: { target: 10, trig: 7, sl: 6 }, offPct: { target: 10, trig: 7, sl: 6 }, unit: "pt", entryTouched: false };
 try { const s = JSON.parse(localStorage.getItem(KEY + "-form") || "null"); if (s) { Object.assign(F.off, s.off || {}); Object.assign(F.offPct, s.offPct || {}); F.unit = s.unit === "pct" ? "pct" : "pt"; F.chase = s.chase || 30; F.product = s.product === "NRML" ? "NRML" : "MIS"; } } catch {}
 
 export function mountScalp(el, helpers) {
   H = helpers; root = el;
-  if (!document.getElementById("sp-css")) document.head.insertAdjacentHTML("beforeend", `<style id="sp-css">${CSS}${AI_CSS}</style>`);
+  if (!document.getElementById("sp-css")) document.head.insertAdjacentHTML("beforeend", `<style id="sp-css">${CSS}${AI_CSS}${CHAIN_CSS}</style>`);
   root.innerHTML = `
-    <div class="page-head"><div><h1>Scalping</h1><p class="sub">Option ka live chart, market depth, aur ek click mein BUY + target + stop-loss.</p></div></div>
+    <div class="page-head"><div><h1>Scalping</h1><p class="sub">BANK NIFTY / NIFTY: index aur option ka live chart, poori option chain, AI ka strike pick, aur ek click mein BUY + target + stop-loss.</p></div></div>
     <section class="panel"><div class="panel-b">
       <div class="btbar">
-        <form class="search" id="sform4"><div class="in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="q4" placeholder="Option search: banknifty 52000 ce, nifty 24500 pe" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-controls="ac4" aria-expanded="false"><div class="ac" id="ac4" role="listbox" hidden></div></div><button>Open</button></form>
+        <div class="seg sp-idx" id="spidx">${Object.values(INDICES).map((x) => `<button type="button" data-i="${x.key}" class="${x.key === IDX ? "on" : ""}">${x.label}</button>`).join("")}</div>
+        <label class="sp-exp"><span class="label">Expiry</span><select class="sel" id="spexp" aria-label="Expiry"></select></label>
         <div class="seg" id="sptf">${TFS.map((t) => `<button type="button" data-k="${t.k}" class="${t.k === tf.k ? "on" : ""}">${t.k}</button>`).join("")}</div>
-        <span class="sp-status"><span class="dot" id="spdot"></span><span id="spstat">Option chuniye</span></span>
+        <span class="sp-status"><span class="dot" id="spdot"></span><span id="spstat">Shuru ho raha hai…</span></span>
       </div>
       <div class="note" id="splock" hidden></div>
     </div></section>
     <div class="sp-grid">
       <div class="sp-left">
         <section class="panel">
-          <div class="panel-h"><h2 id="spname">Koi option nahi chuna</h2><span class="right"><span class="ltp tnum" id="spltp"></span><span class="chg tnum" id="spchg"></span></span></div>
-          <div class="sp-ba tnum" id="spba"></div>
-          <div id="spchart"><div class="empty sp-empty">Upar option search kariye (jaise <b>banknifty 52000 ce</b>). Chart, depth aur order panel yahan khulenge.</div></div>
+          <div class="panel-h"><h2 id="spiname">–</h2><span class="label">INDEX</span><span class="right"><span class="ltp tnum" id="spiltp"></span><span class="chg tnum" id="spichg"></span></span></div>
+          <div class="panel-b sp-chipsb"><div class="ai-chips" id="spchips"></div></div>
+          <div id="spichart"></div>
         </section>
+        <section class="panel">
+          <div class="panel-h"><h2 id="spname">Koi option nahi khula</h2><span class="right"><span class="ltp tnum" id="spltp"></span><span class="chg tnum" id="spchg"></span></span></div>
+          <div class="sp-ba tnum" id="spba"></div>
+          <div class="sp-ba tnum" id="spgk"></div>
+          <div id="spchart">${EMPTY_OPT}</div>
+        </section>
+        <section class="panel"><div class="panel-h"><h2>Option chain</h2><span class="right note" style="margin:0">CE / PE daam dabaiye = wo option khulega · OI Δ = page khulne se badlav</span></div>
+          <div class="ch-box" id="spchain"></div></section>
         <section class="panel" id="spai"></section>
         <section class="panel" id="spdepthp" hidden><div class="panel-h"><h2>Market depth</h2><span class="right label" id="spdq"></span></div><div class="panel-b" id="spdepth"></div></section>
       </div>
       <div class="sp-right">
         <section class="panel" id="spbr" hidden></section>
-        <section class="panel" id="sporder"><div class="panel-h"><h2>Smart order</h2></div><div class="panel-b"><div class="note">Pehle option chuniye.</div></div></section>
+        <section class="panel" id="sporder"><div class="panel-h"><h2>Smart order</h2></div><div class="panel-b"><div class="note">Option chain se strike chuniye.</div></div></section>
         <section class="panel" id="spplain" hidden><div class="panel-h"><h2>Simple order</h2><span class="right label">bina target/SL</span></div><div class="panel-b" id="spplainb"></div></section>
       </div>
     </div>
     <footer>Scalping mein nuksan jaldi ho sakta hai. Stop-loss is page se chalta hai: page band = SL band. Ye investment advice nahi hai.</footer>`;
-  ai = mountAI(root.querySelector("#spai"), { H, setTokens: (list) => { extraToks = list; subscribe(); }, applySignal,
-    state: () => ({ target, ltp, bid, ask, depth, wsLive }) });
-  const qIn = root.querySelector("#q4");
-  const ac = H.makeAC(qIn, root.querySelector("#ac4"), { filter: (o) => o.option, onChoose: (o) => { qIn.value = o.name; choose(o); } });
-  root.querySelector("#sform4").onsubmit = async (e) => {
-    e.preventDefault(); if (ac.openWithSel()) return ac.pickSel();
-    const q = qIn.value.trim(); if (!q) return; ac.cancel();
-    const list = (await H.suggest(q)).filter((o) => o.option);
-    if (list.length) { qIn.value = list[0].name; choose(list[0]); } else H.toast(`"${q}" jaisa koi option nahi mila. Jaise: banknifty 52000 ce`);
-  };
+  market = mountChain(root.querySelector("#spchain"), root.querySelector("#spchips"), {
+    H, setTokens: (list) => setToks("chain", list), current: () => target?.symbol, aiPick: () => ai?.pick(),
+    onPick: (o) => pick(o), onLoaded: expiries, onSummary: indexLines });
+  ai = mountAI(root.querySelector("#spai"), { H, market, applyPick, state: () => ({ target, meta: metaP, ltp, bid, ask, depth, wsLive }) });
+  root.querySelector("#spidx").onclick = (e) => { const b = e.target.closest("button"); if (b && b.dataset.i !== IDX) setIndex(b.dataset.i); };
+  root.querySelector("#spexp").onchange = (e) => market.setExpiry(e.target.value);
   root.querySelector("#sptf").onclick = (e) => { const b = e.target.closest("button"); if (!b || b.dataset.k === tf.k) return; tf = TFS.find((t) => t.k === b.dataset.k);
-    root.querySelectorAll("#sptf button").forEach((x) => x.classList.toggle("on", x === b)); if (target) loadBars(); };
+    root.querySelectorAll("#sptf button").forEach((x) => x.classList.toggle("on", x === b)); loadIndexBars(); if (target) loadBars(); };
   window.addEventListener("beforeunload", (e) => { if (engine?.live) { e.preventDefault(); e.returnValue = ""; } });
   window.addEventListener("hashchange", () => { if (engine?.live && !location.hash.startsWith("#/scalp")) H.toast("Scalping bracket chal raha hai. Is tab ko band mat kariye, SL isi se chalta hai."); });
-  resume();
+  ai.refresh();
+  resume().then((resumed) => { if (!resumed) setIndex(IDX, true); });
+  setInterval(() => {                                      // no live ticks: refresh the chain + index chart now and then
+    if (wsLive || document.hidden || root.closest("[hidden]") || !market.idx) return;
+    market.reload(); if (!tf.live) loadIndexBars(true);
+  }, 30000);
 }
-export function onShowScalp() { if (target) { orderPanel(); renderBracket(); ai?.refresh(); } }
+export function onShowScalp() { ai?.refresh(); market?.draw(); if (target) { orderPanel(); renderBracket(); } }
 
-// AI panel -> "Smart order mein bharo": open that contract if needed, fill entry / target / SL trigger / SL limit.
-// It never sends an order: the user presses BUY (and confirms) as always.
-async function applySignal(sig) {
-  if (engine?.live) { H.toast("Ek bracket chal raha hai. Naya order uske poora hone ke baad."); return false; }
+// ---------- BANK NIFTY / NIFTY ----------
+async function setIndex(key, first = false) {
+  if (engine?.live) { H.toast("Ek bracket chal raha hai. Index uske poora hone ke baad badaliye."); return; }
+  IDX = key; try { localStorage.setItem(KEY + "-index", key); } catch {}
+  root.querySelectorAll("#spidx button").forEach((x) => x.classList.toggle("on", x.dataset.i === key));
+  root.querySelector("#spiname").textContent = INDICES[key].index;
+  if (!first || target) closeOption();
+  ai.indexChanged(); ibars = []; iticks = []; ilineKey = "";
+  await Promise.all([market.setIndex(key), loadIndexBars()]);
+}
+function expiries(d) {
+  const sel = root.querySelector("#spexp");
+  sel.innerHTML = (d.expiries || [d.expiry]).map((e) => `<option value="${e}" ${e === d.expiry ? "selected" : ""}>${new Date(e + "T00:00:00Z").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "2-digit", timeZone: "UTC" })}</option>`).join("");
+}
+function pick(o) {                                          // a CE / PE price was clicked in the chain
+  if (engine?.live) { H.toast("Ek bracket chal raha hai. Naya strike uske poora hone ke baad."); return; }
+  if (o.symbol === target?.symbol) return;
+  choose(o);
+}
+function closeOption() {
+  target = null; metaP = null; ltp = bid = ask = depth = prevClose = null; ticks = []; bars = []; lastCum = null;
+  if (chart) { chart.remove(); chart = main = vol = null; plines = []; }
+  root.querySelector("#spchart").innerHTML = EMPTY_OPT; root.querySelector("#spname").textContent = "Koi option nahi khula";
+  ["#spltp", "#spchg", "#spba", "#spgk"].forEach((s) => (root.querySelector(s).innerHTML = ""));
+  root.querySelector("#spdepthp").hidden = true; root.querySelector("#spplain").hidden = true;
+  root.querySelector("#sporder").innerHTML = `<div class="panel-h"><h2>Smart order</h2></div><div class="panel-b"><div class="note">Option chain se strike chuniye.</div></div>`;
+  if (!engine?.live) { engine = null; ctx = null; save(); renderBracket(); }
+  setToks("opt", []);
+}
+
+// index chart: candles from /api/candles (index symbol), live from ticks; support / resistance / max pain as lines
+function ensureIndexChart() {
+  if (ich) return;
+  ich = createChart(root.querySelector("#spichart"), chartOpts());
+  const up = css("--pos"), dn = css("--neg");
+  imain = ich.addCandlestickSeries({ upColor: up, downColor: dn, borderVisible: false, wickUpColor: up, wickDownColor: dn, priceFormat: { type: "price", precision: 2, minMove: 0.05 } });
+}
+async function loadIndexBars(quiet = false) {
+  ensureIndexChart();
+  ich.applyOptions({ timeScale: { secondsVisible: tf.sec < 60 } });
+  const ix = INDICES[IDX];
+  if (tf.live) ibars = barsFromTicks(iticks, tf.sec);
+  else {
+    try { const r = await fetch(`/api/candles?sym=${encodeURIComponent(ix.sym)}&interval=${tf.api}`, { cache: "no-store" }); const d = await r.json();
+      if (!r.ok) throw new Error(d.error || `Error ${r.status}`);
+      if (ix.key !== IDX) return;
+      ibars = d.candles.map(([t, o, h, l, c]) => ({ time: t + IST, open: o, high: h, low: l, close: c, volume: 0 }));
+      market.setUnder({ token: d.instrument_token, prevClose: d.prevClose, spot: d.last ?? ibars.at(-1)?.close });
+      setToks("idx", d.instrument_token ? [d.instrument_token] : []);
+    } catch (e) { ibars = []; if (!quiet) H.toast("Index chart nahi aaya: " + e.message); }
+  }
+  imain.setData(ibars.map(pt)); if (!quiet) ich.timeScale().fitContent();
+  indexHeader();
+}
+function indexHeader() {
+  const u = market.under, c = root.querySelector("#spichg");
+  root.querySelector("#spiltp").textContent = f2(u.spot);
+  if (u.spot && u.prevClose) { const d = u.spot - u.prevClose; c.className = "chg tnum " + (d >= 0 ? "up" : "down"); c.textContent = `${d >= 0 ? "+" : ""}${f2(d)} (${((d / u.prevClose) * 100).toFixed(2)}%)`; }
+  else c.textContent = "";
+}
+function indexLines(s) {                                     // support / resistance / max pain from the chain on the index chart
+  if (!imain || !s) return;
+  const k = `${s.support}|${s.resistance}|${s.maxPain}`; if (k === ilineKey) return; ilineKey = k;
+  ilines.forEach((l) => imain.removePriceLine(l)); ilines = [];
+  const add = (p, color, title, style) => { if (p > 0) ilines.push(imain.createPriceLine({ price: +p, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title })); };
+  add(s.resistance, css("--neg"), "Resistance", LineStyle.Dashed); add(s.support, css("--pos"), "Support", LineStyle.Dashed); add(s.maxPain, css("--muted"), "Max pain", LineStyle.Dotted);
+}
+function onIndexTick(t) {
+  const ms = Date.now();
+  iticks.push({ ms, price: t.ltp, dv: 0 }); if (iticks.length > 100000) iticks.splice(0, 20000);
+  if (imain) { const before = ibars.length, bar = applyTick(ibars, ms, t.ltp, 0, tf.sec); if (bar) { if (!before) imain.setData(ibars.map(pt)); else imain.update(pt(bar)); } }
+  indexHeader(); greeksRow();
+}
+
+// AI -> open its strike + fill entry / target / SL trigger / SL limit. It never sends an order: the user presses BUY.
+async function applyPick(sig) {
+  if (engine?.live) { H.toast("Ek bracket chal raha hai. AI ka strike uske poora hone ke baad."); return false; }
   if (sig.symbol !== target?.symbol) {
-    root.querySelector("#q4").value = sig.name;
-    await choose({ symbol: sig.symbol, name: sig.name, lot_size: sig.lot });
+    await choose({ symbol: sig.symbol, name: sig.name, lot_size: sig.lot, option: true });
     if (target?.symbol !== sig.symbol) return false;
   }
   const gap = F.sl > 0 && F.trig > 0 ? r2(F.sl - F.trig) : 0;          // keep your usual trigger -> limit gap (e.g. 93 -> 94)
   F.entry = snap(sig.entry); F.entryTouched = true; F.target = snap(sig.target); F.trig = snap(sig.stopLoss);
   F.sl = snap(Math.max(TICK, Math.min(sig.stopLoss + gap, F.entry - TICK)));
-  confirming = false; orderPanel();
+  confirming = false; orderPanel(); market.draw();
   root.querySelector("#sporder").scrollIntoView({ behavior: "smooth", block: "nearest" });
   return true;
 }
 
-// ---------- choose a contract ----------
+// ---------- open an option ----------
 async function choose(o, keepEngine = false) {
   if (engine?.live && !keepEngine) { H.toast("Ek bracket abhi chal raha hai. Pehle use poora hone dijiye ya 'Managing band' kariye."); return; }
-  target = { symbol: o.symbol, name: o.name || o.symbol, lot: +o.lot_size || +o.lot || null, token: o.token || null };
+  target = { symbol: o.symbol, name: o.name || o.symbol, kind: "option", lot: +o.lot_size || +o.lot || null, token: o.token || null };
   ltp = null; bid = ask = null; depth = null; prevClose = null; ticks = []; lastCum = null; F.entry = null; F.entryTouched = false; confirming = false;
   if (!keepEngine) { engine = null; ctx = null; save(); }
   root.querySelector("#spname").textContent = target.name;
   root.querySelector("#spdepthp").hidden = true;
+  market.draw();
   [trading] = await Promise.all([tradingState(true), loadMeta()]);
   limits = trading?.trading?.limits || null;
-  ai.setContract(target, metaP);
   await loadBars();
-  orderPanel(); renderBracket(); plain();
+  orderPanel(); renderBracket(); plain(); market.draw(); ai.draw();
   connect();
 }
 let metaP = null;
@@ -121,14 +211,17 @@ function plain() {
   if (metaP) mountTrade(box, { ...metaP, last: ltp ?? metaP.last });
 }
 
-// ---------- chart ----------
+// ---------- option chart ----------
+function chartOpts() {
+  return { autoSize: true, layout: { background: { color: "transparent" }, textColor: css("--muted"), fontFamily: "Inter, system-ui, sans-serif", fontSize: 11 },
+    grid: { vertLines: { color: "rgba(125,135,153,.08)" }, horzLines: { color: "rgba(125,135,153,.08)" } }, crosshair: { mode: CrosshairMode.Normal },
+    rightPriceScale: { borderColor: css("--line") }, timeScale: { borderColor: css("--line"), timeVisible: true, secondsVisible: true, rightOffset: 6 },
+    localization: { priceFormatter: (p) => f2(p) } };
+}
 function ensureChart() {
   if (chart) return;
   const el = root.querySelector("#spchart"); el.innerHTML = "";
-  chart = createChart(el, { autoSize: true, layout: { background: { color: "transparent" }, textColor: css("--muted"), fontFamily: "Inter, system-ui, sans-serif", fontSize: 11 },
-    grid: { vertLines: { color: "rgba(125,135,153,.08)" }, horzLines: { color: "rgba(125,135,153,.08)" } }, crosshair: { mode: CrosshairMode.Normal },
-    rightPriceScale: { borderColor: css("--line") }, timeScale: { borderColor: css("--line"), timeVisible: true, secondsVisible: true, rightOffset: 6 },
-    localization: { priceFormatter: (p) => f2(p) } });
+  chart = createChart(el, chartOpts());
   const up = css("--pos"), dn = css("--neg");
   main = chart.addCandlestickSeries({ upColor: up, downColor: dn, borderVisible: false, wickUpColor: up, wickDownColor: dn, priceFormat: { type: "price", precision: 2, minMove: TICK } });
   main.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.2 } });
@@ -140,18 +233,22 @@ const vpt = (b) => ({ time: b.time, value: b.volume || 0, color: b.close >= b.op
 async function loadBars() {
   ensureChart(); clearInterval(candleTimer);
   chart.applyOptions({ timeScale: { secondsVisible: tf.sec < 60 } });
+  const sym = target.symbol;
   if (tf.live) { bars = barsFromTicks(ticks, tf.sec); }
   else {
-    try { const r = await fetch(`/api/candles?sym=${encodeURIComponent(target.symbol)}&interval=${tf.api}`, { cache: "no-store" }); const d = await r.json();
+    try { const r = await fetch(`/api/candles?sym=${encodeURIComponent(sym)}&interval=${tf.api}`, { cache: "no-store" }); const d = await r.json();
       if (!r.ok) throw new Error(d.error || `Error ${r.status}`);
+      if (target?.symbol !== sym) return;
       target.token ??= d.instrument_token; prevClose = d.prevClose ?? prevClose;
       bars = d.candles.map(([t, o, h, l, c, v]) => ({ time: t + IST, open: o, high: h, low: l, close: c, volume: v || 0 }));
       if (ltp == null && bars.length) ltp = bars[bars.length - 1].close;
     } catch (e) { bars = []; H.toast("Chart data nahi aaya: " + e.message); }
     if (!H.isAdmin()) candleTimer = setInterval(() => { if (!document.hidden && target) loadBars(); }, 20000);    // no live ticks: refresh
   }
+  if (!main) return;
   main.setData(bars.map(pt)); vol.setData(bars.map(vpt)); chart.timeScale().fitContent();
-  header(); drawLines();
+  setToks("opt", target.token ? [target.token] : []);
+  header(); greeksRow(); drawLines();
 }
 function header() {
   root.querySelector("#spltp").textContent = f2(ltp);
@@ -160,6 +257,14 @@ function header() {
   else c.textContent = "";
   root.querySelector("#spba").innerHTML = bid || ask ? `<span>Bid <b class="up">${f2(bid)}</b></span><span>Ask <b class="down">${f2(ask)}</b></span><span>Spread <b>${bid && ask ? f2(ask - bid) : "–"}</b></span>${target?.lot ? `<span>Lot <b>${target.lot}</b></span>` : ""}`
     : target?.lot ? `<span>Lot <b>${target.lot}</b></span><span class="note" style="margin:0">Bid/Ask live ticks se aata hai</span>` : "";
+}
+let gkT = 0;
+function greeksRow() {                                      // IV and Greeks of the open option (our Black-Scholes estimate)
+  const el = root.querySelector("#spgk"), o = metaP?.option, spot = market.under.spot;
+  if (!el || !target || !o || !spot || !ltp) { if (el && !target) el.innerHTML = ""; return; }
+  if (Date.now() - gkT < 1000) return; gkT = Date.now();
+  const g = contractGreeks({ ltp, spot, strike: o.strike, expiry: o.expiry, type: o.type });
+  el.innerHTML = `<span>IV <b>${g.iv ? g.iv + "%" : "–"}</b></span><span>Delta <b>${g.delta ?? "–"}</b></span><span>Gamma <b>${g.gamma ?? "–"}</b></span><span>Theta/din <b class="down">${g.theta != null ? f2(g.theta) : "–"}</b></span><span>Vega <b>${g.vega != null ? f2(g.vega) : "–"}</b></span>`;
 }
 function drawLines() {
   if (!main) return;
@@ -178,13 +283,22 @@ function drawLines() {
 
 // ---------- live data ----------
 function setStatus(kind, text) { root.querySelector("#spdot").className = "dot " + kind; root.querySelector("#spstat").textContent = text; }
+// live token sources: the open option first, then the index and the option chain
+const tokSrc = {};
+function setToks(src, list) {
+  tokSrc[src] = list; extraToks = [...new Set(Object.values(tokSrc).flat())];
+  if (ws) subscribe(); else if (extraToks.length) connect();
+}
+let connecting = false;
 async function connect() {
-  if (!target) return;
+  if (!target && !extraToks.length) return;
   if (ws && ws.readyState <= 1) { subscribe(); return; }
-  if (!H.isAdmin()) { setStatus("", "Delayed · login ke bina live nahi"); return; }
+  if (!H.isAdmin()) { setStatus("", "Delayed · login ke bina live nahi (30s refresh)"); return; }
+  if (connecting) return; connecting = true;
   let auth;
   try { auth = await H.adminGet("ticker"); }
-  catch (e) { wsLive = false; setStatus("warn", "Live ticks nahi: " + e.message.slice(0, 60)); startLtpPoll(); return; }
+  catch (e) { connecting = false; wsLive = false; setStatus("warn", "Live ticks nahi: " + e.message.slice(0, 60)); startLtpPoll(); return; }
+  connecting = false;
   ws = new WebSocket(`${WSBASE}?api_key=${encodeURIComponent(auth.api_key)}&access_token=${encodeURIComponent(auth.access_token)}`);
   ws.binaryType = "arraybuffer";
   ws.onopen = () => { retry = 0; wsLive = true; subSet = new Set(); subscribe(); stopLtpPoll(); setStatus("live", "Live · Zerodha ticks"); };
@@ -201,9 +315,9 @@ async function connect() {
     setTimeout(connect, was ? 1000 : Math.min(30000, 2000 * 2 ** retry++)); };
 }
 function subscribe() {
-  if (!ws || ws.readyState !== 1 || !target?.token) return;
-  // the open contract first, then the AI panel's index + option chain tokens (all in "full" mode: OI + depth)
-  const want = new Set([target.token, ...extraToks].filter(Boolean));
+  if (!ws || ws.readyState !== 1) return;
+  // open option, index and chain, all in "full" mode (OI + depth); the open option goes first
+  const want = new Set([target?.token, ...(tokSrc.opt || []), ...extraToks].filter(Boolean));
   const add = [...want].filter((t) => !subSet.has(t)), del = [...subSet].filter((t) => !want.has(t));
   if (del.length) ws.send(JSON.stringify({ a: "unsubscribe", v: del }));
   if (add.length) { ws.send(JSON.stringify({ a: "subscribe", v: add })); ws.send(JSON.stringify({ a: "mode", v: ["full", add] })); }
@@ -218,7 +332,7 @@ function startLtpPoll() {                                   // fallback: light l
 }
 function stopLtpPoll() { clearInterval(ltpTimer); ltpTimer = null; }
 function onTick(t, polled = false) {
-  if (!polled) ai?.onTick(t);
+  if (!polled) { market?.onTick(t); if (t.token && t.token === market?.under.token) onIndexTick(t); }
   if (!target || (t.token !== target.token && !polled)) return;
   const ms = Date.now(), dv = t.volume != null && lastCum != null ? Math.max(0, t.volume - lastCum) : 0;
   if (t.volume != null) lastCum = t.volume;
@@ -227,7 +341,7 @@ function onTick(t, polled = false) {
   ticks.push({ ms, price: ltp, dv }); if (ticks.length > 100000) ticks.splice(0, 20000);
   if (main) { const before = bars.length, bar = applyTick(bars, ms, ltp, dv, tf.sec);
     if (bar) { if (!before) { main.setData(bars.map(pt)); vol.setData(bars.map(vpt)); } else { main.update(pt(bar)); vol.update(vpt(bar)); } } }
-  header(); drawDepth(); liveCalc(); pnlTick();
+  header(); greeksRow(); drawDepth(); liveCalc(); pnlTick();
   engine?.onTick(ltp);
 }
 function drawDepth() {
@@ -330,7 +444,16 @@ function calc() {
   if (!err && limits && F.entry * q > limits.max_value) err = `Rakam ₹${Math.round(F.entry * q).toLocaleString("en-IN")} limit ₹${limits.max_value.toLocaleString("en-IN")} se zyada hai`;
   if (!err && ltp && F.entry > ltp * 1.02) err = `Entry ${f2(F.entry)} abhi ke daam ${f2(ltp)} se kaafi upar hai. Turant mehenga bhar jaayega.`;
   const val = F.entry * q, risk = F.sl > 0 ? (F.entry - F.sl) * q : null, rew = F.target > 0 ? (F.target - F.entry) * q : null;
-  $("spsum").innerHTML = `<span>Qty</span><b>${q || "–"}</b><span>Rakam</span><b>${inr(val)}</b><span>Max nuksan ≈</span><b class="down">${risk == null ? "–" : inr(risk)}</b><span>Target munafa ≈</span><b class="up">${rew == null ? "–" : inr(rew)}</b>`;
+  // Zerodha charges for the BUY + the SELL (at target; at the SL the sell is smaller, so STT a bit less)
+  const exitPx = F.target > 0 ? F.target : F.sl > 0 ? F.sl : F.entry;
+  const ch = q && F.entry > 0 ? optionCharges({ buy: val, sell: exitPx * q }) : null, chSl = q && F.sl > 0 ? optionCharges({ buy: val, sell: F.sl * q }) : null;
+  const rs = (v) => (v == null ? "–" : "₹" + f2(v));
+  const be = ch && q ? F.entry + optionCharges({ buy: val, sell: val }).total / q : null;
+  $("spsum").innerHTML = `<span>Qty</span><b>${q || "–"}</b><span>Rakam</span><b>${inr(val)}</b>
+    <span>Brokerage + charges</span><b title="BUY + SELL dono orders ka">${rs(ch?.total)}</b><span>Break-even ≈</span><b>${be ? f2(snap(be + TICK / 2)) : "–"}</b>
+    <div class="sp-ch">${ch ? `BUY + SELL: Brokerage ₹${f2(ch.brokerage)} · STT ₹${f2(ch.stt)} · Exchange ₹${f2(ch.txn)} · GST ₹${f2(ch.gst)} · Stamp + SEBI ₹${f2(ch.stamp + ch.sebi)}` : ""}</div>
+    <span>Max nuksan ≈</span><b class="down">${risk == null ? "–" : inr(risk + (chSl?.total || 0))}</b><span>Target munafa ≈</span><b class="up">${rew == null ? "–" : inr(rew - (ch?.total || 0))}</b>
+    <div class="sp-ch">${risk != null || rew != null ? "Nuksan / munafa charges jodkar / ghatakar (andaaza)." : ""}</div>`;
   const e = $("sperr"); e.hidden = !err; e.textContent = err ? "✗ " + err : "";
   $("spgo").disabled = !!err || !!why();
   saveForm(); drawLines();
@@ -399,10 +522,11 @@ async function pollOrders() {
   } finally { polling = false; }
   if (!engine.live) { clearInterval(pollTimer); orderPanel(); }
 }
-function lockSearch() {
+function lockSearch() {                                    // while a bracket is live: no index / expiry / strike change
   const live = !!engine?.live, l = root.querySelector("#splock");
-  root.querySelector("#q4").disabled = live; l.hidden = !live;
-  l.innerHTML = live ? `🔒 Bracket chal raha hai (${esc(ctx?.name)}), isliye search band hai.` : "";
+  root.querySelectorAll("#spidx button").forEach((b) => (b.disabled = live)); root.querySelector("#spexp").disabled = live;
+  l.hidden = !live;
+  l.innerHTML = live ? `🔒 Bracket chal raha hai (${esc(ctx?.name)}), isliye index / expiry / strike badalna band hai.` : "";
 }
 function save() {
   try { if (!engine) localStorage.removeItem(KEY); else localStorage.setItem(KEY, JSON.stringify({ ctx, b: engine.toJSON(), at: Date.now() })); } catch {}
@@ -410,14 +534,18 @@ function save() {
 function saveForm() { try { localStorage.setItem(KEY + "-form", JSON.stringify({ off: F.off, offPct: F.offPct, unit: F.unit, chase: F.chase, product: F.product })); } catch {} }
 async function resume() {
   let s = null; try { s = JSON.parse(localStorage.getItem(KEY) || "null"); } catch {}
-  if (!s?.ctx || !s.b) return;
-  if (Date.now() - (s.at || 0) > 18 * 36e5) { try { localStorage.removeItem(KEY); } catch {} return; }   // yesterday's trade: forget it
+  if (!s?.ctx || !s.b) return false;
+  if (Date.now() - (s.at || 0) > 18 * 36e5) { try { localStorage.removeItem(KEY); } catch {} return false; }   // yesterday's trade: forget it
   ctx = s.ctx;
-  try { engine = makeEngine(ctx, s.b); } catch { engine = null; return; }
-  root.querySelector("#q4").value = ctx.name;
-  await choose({ symbol: ctx.symbol, name: ctx.name, lot_size: ctx.lot, token: ctx.token }, true);
+  try { engine = makeEngine(ctx, s.b); } catch { engine = null; return false; }
+  const key = indexOfSymbol(ctx.symbol) || IDX;             // setIndex refuses while a bracket is live, so set the index here
+  IDX = key; root.querySelectorAll("#spidx button").forEach((x) => x.classList.toggle("on", x.dataset.i === key));
+  root.querySelector("#spiname").textContent = INDICES[key].index;
+  market.setIndex(key); loadIndexBars();
+  await choose({ symbol: ctx.symbol, name: ctx.name, lot_size: ctx.lot, token: ctx.token, option: true }, true);
   if (engine.live) { engine.log("Page dobara khula: bracket resume, Zerodha se orders check kar rahe hain"); H.toast("Pichhla bracket resume kiya. Orders Zerodha se check ho rahe hain."); startPolling(); pollOrders(); }
   renderBracket(); lockSearch();
+  return true;
 }
 
 function renderBracket() {
@@ -444,7 +572,7 @@ function renderBracket() {
   b("spcx", () => e.cancelEntry());
   b("spexit", () => { if (F.oneClick || confirm("Poori position abhi ke daam par bechein?")) e.exitNow(); });
   b("spstop", () => { if (confirm("Managing band karein? Zerodha par jo orders lage hain wo waise hi rahenge, lekin SL/chase ab nahi chalega.")) { e.stop(); clearInterval(pollTimer); orderPanel(); } });
-  b("spnew", () => { engine = null; ctx = null; F.entryTouched = false; F.entry = null; save(); renderBracket(); lockSearch(); orderPanel(); drawLines(); });
+  b("spnew", () => { engine = null; ctx = null; F.entryTouched = false; F.entry = null; save(); renderBracket(); lockSearch(); orderPanel(); drawLines(); market.draw(); });
 }
 
 function pnlTick() {                                       // running P&L on the open qty, updated every tick
@@ -459,8 +587,10 @@ const CSS = `
 .sp-grid{display:grid;gap:14px;grid-template-columns:minmax(0,1fr);margin-top:14px}
 @media(min-width:1100px){.sp-grid{grid-template-columns:minmax(0,1fr) 380px}}
 .sp-left,.sp-right{display:grid;gap:14px;align-content:start;min-width:0}
-#spchart{height:440px;position:relative}
-@media(max-width:760px){#spchart{height:300px}}
+#spchart{height:360px;position:relative}#spichart{height:250px;position:relative}
+@media(max-width:760px){#spchart{height:280px}#spichart{height:200px}}
+.sp-idx button{font-weight:700;padding:0 14px}.sp-exp{display:inline-flex;align-items:center;gap:6px}.sp-exp .sel{height:30px;width:auto}
+.sp-chipsb{padding:10px 14px 4px}
 .sp-empty{height:100%;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px;color:var(--muted)}
 .sp-ba{display:flex;gap:16px;flex-wrap:wrap;padding:8px 14px 0;font-size:12px;color:var(--muted)}.sp-ba b{color:var(--ink);font-weight:600}
 .sp-form{display:grid;gap:10px}
@@ -474,7 +604,7 @@ const CSS = `
 .sp-pts .field{height:32px;padding:0 6px;font-size:12.5px;text-align:right}
 .sp-off{font-size:12px;color:var(--muted);min-width:56px;text-align:right;font-variant-numeric:tabular-nums}
 .sp-sum{display:grid;grid-template-columns:auto 1fr auto 1fr;gap:6px 10px;font-size:12px;padding:10px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2)}
-.sp-sum span{color:var(--muted)}.sp-sum b{font-weight:600}
+.sp-sum span{color:var(--muted)}.sp-ch{grid-column:1/-1;font-size:11px;color:var(--muted);margin:-2px 0 2px}.sp-ch:empty{display:none}.sp-sum b{font-weight:600}
 .sp-follow{display:block;text-transform:none;letter-spacing:0;font-weight:500;color:var(--accent);font-size:10.5px;margin-top:2px}
 .sp-go{width:100%;height:46px;font-size:15px}
 .sp-warn{background:var(--warn-bg);color:var(--warn-ink);border-radius:var(--r-sm);padding:9px 11px;font-size:12px;line-height:1.45}

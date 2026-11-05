@@ -167,3 +167,12 @@ test("relay rules for NFO", () => {
   assert.match(validOrder({ ...base, product: "CNC" }), /NRML or MIS/);
   assert.match(validOrder({ ...base, exchange: "NSE", product: "NRML" }), /CNC or MIS/);
 });
+
+test("search: 'NIFTY 50' / 'NIFTY 500' are index names, not option strikes", async () => {
+  assert.equal(parseOptionQuery("NIFTY 50").wants, false);
+  assert.equal(parseOptionQuery("nifty50").wants, false);
+  assert.equal(parseOptionQuery("NIFTY NEXT 50").wants, false);
+  assert.equal(parseOptionQuery("nifty 24500 ce").wants, true);
+  const K = { api_key: "k", access_token: "t", token_at: new Date().toISOString() };
+  assert.deepEqual(await searchOptions("banknifty 99999 ce", K, mem(), net(), Date.now()), [], "no such strike -> normal search answers");
+});

@@ -74,7 +74,8 @@ export function chainSummary(rows, spot, expiry, base = new Map(), now = Date.no
       const b = base.get(c.symbol), dOi = c.oi != null && b?.oi != null ? c.oi - b.oi : null, dPx = c.ltp != null && b?.ltp != null ? r2(c.ltp - b.ltp) : null;
       const iv = spot ? impliedVol(c.ltp, spot, r.strike, T, type) : null;
       if (dOi) changes.push({ symbol: c.symbol, strike: r.strike, type, dOi, dPx, buildup: buildup(dPx, dOi) });
-      return { symbol: c.symbol, ltp: c.ltp, oi: c.oi, dOi, dPx, iv: iv ? r2(iv * 100) : null };
+      const g = iv ? greeks(spot, r.strike, T, iv, type) : null;
+      return { symbol: c.symbol, ltp: c.ltp, oi: c.oi, dOi, dPx, iv: iv ? r2(iv * 100) : null, delta: g ? r2(g.delta) : null, volume: c.volume ?? null };
     };
     const ce = side(r.ce, "CE"), pe = side(r.pe, "PE");
     ceOi += ce?.oi || 0; peOi += pe?.oi || 0; ceBase += base.get(r.ce?.symbol)?.oi ?? (ce?.oi || 0); peBase += base.get(r.pe?.symbol)?.oi ?? (pe?.oi || 0);

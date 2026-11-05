@@ -202,44 +202,57 @@ Show a preview before big changes.
 Until then keep changes uncommitted in the working tree (a session stop hook nags about unpushed commits; do not push for it).
 When the user asks to send: commit everything in one commit, run `npm test`, push once, then ask them to check Netlify Deploys.
 
-## Scalping page (2026-11-05)
+## Scalping page (2026-11-05, redesigned same day)
 Sidebar item "Scalping" below Backtest (#/scalp, #view-scalp, lazy public/scalp.mjs; gets {makeAC, suggest, adminPost, adminGet,
-toast, isAdmin}). Option-only search; chart 1s/5s/15s (ticks only) + 1m/5m (/api/candles + ticks); Zerodha WebSocket in
-"full" mode -> bid/ask + 5-level depth (kiteticks parses 184-byte packets) and order updates (text {type:"order"}).
-No WebSocket -> GET /api/admin/ltp every 3 s. Smart order: lots, entry (follows live price until typed), target / SL trigger /
-SL limit kept as offsets from entry in Points (₹) or Percent (%) (toggle "Target/SL mein"; the +/- boxes are editable;
-default +10/-7/-6; saved in localStorage `sb-scalp-form`), chase seconds (3..600,
-default 30), MIS/NRML, one-click toggle (OFF by default -> confirm box). Engine public/scalpengine.mjs (pure, unit tested):
+toast, isAdmin}). User decision: ONLY BANK NIFTY and NIFTY. No search bar, no watchlist (both removed on request).
+Top bar: index switch BANK NIFTY | NIFTY (localStorage `sb-scalp-index`), Expiry select (from /api/chain expiries),
+timeframe 1s/5s/15s (ticks only) / 1m / 5m for BOTH charts, live status. Left column: index chart (NIFTY BANK / NIFTY 50
+candles via /api/candles + index ticks; price lines Support / Resistance / Max pain from the chain) with stat chips (PCR, max
+pain, support, resistance, ATM, ATM IV, days to expiry); option chart (open contract, bid/ask/lot, IV + Greeks row, entry /
+target / SL lines); option chain panel (public/scalpchain.mjs: /api/chain ±10 strikes, live LTP / OI / volume over the WebSocket,
+OI Δ since page open, IV, ITM shading, ATM row, open contract outlined, AI pick badge; click a CE / PE price = open it);
+AI panel; market depth. Right: Bracket, Smart order, Simple order (trade.mjs). Strike/index/expiry changes are locked while a
+bracket is live. Zerodha WebSocket in "full" mode for the open option + index + chain (token sources merged); order updates
+from text {type:"order"}; no WebSocket -> /api/admin/ltp every 3 s for the option, chain + index chart refresh every 30 s.
+Smart order: lots, entry (follows live price until typed), target / SL trigger / SL limit kept as offsets from entry in
+Points (₹) or Percent (%) (toggle "Target/SL mein"; +/- boxes editable; default +10/-7/-6; localStorage `sb-scalp-form`),
+chase seconds (3..600, default 30), MIS/NRML, one-click toggle (OFF by default -> confirm box), charges box (below).
+Engine public/scalpengine.mjs (pure, unit tested):
 BUY LIMIT -> on fill SELL LIMIT target -> price <= trigger once -> cancel target, wait for CANCELLED, then SELL LIMIT at SL limit
 -> not filled in chaseSec -> MODIFY that SL order to the current price (tick floor), repeated every chaseSec. Only one SELL open
 at a time. Handles partial fills, refused cancel (retry 3 s), target filled before cancel, rejects; Exit now; Managing band.
 RUNS IN THE BROWSER: page closed = target stays on Zerodha, SL/chase stop. Bracket saved in localStorage `sb-scalp` and
-resumed on reload (forgotten after 18 h); order status polled via GET /api/admin/order-status?id= (2 s, 4 s when WS live).
+resumed on reload (index taken from the contract symbol; forgotten after 18 h); order status polled via GET
+/api/admin/order-status?id= (2 s, 4 s when WS live).
 Server: POST /api/admin/order-change {op:"cancel"|"modify", order_id, price} (lib/orders.mjs changeOrder: reads the order from
 Kite first; must be open; modify only SELL LIMIT) -> relay POST /cancel (DELETE /orders/regular/{id}) or /modify (PUT, LIMIT price).
 Option SELL also refused if held qty minus pending SELL orders < qty (no writing, no double sells); option SELL skips the 3 s
 lock and the value limit (it only closes). THE DEPLOYED RELAY MUST BE UPDATED (Cloud Shell: git pull && bash relay/setup.sh),
-otherwise cancel/modify get "Relay purana hai". Tested: 88 unit tests; browser scalp suite 26/26 (fake Kite WS with price
-control + stateful fake order book in the stand-in server) + all earlier suites pass. NOT tested against real Kite.
+otherwise cancel/modify get "Relay purana hai". NOT tested against real Kite.
 
 ## Scalping AI trade assistant (2026-11-05)
-User decisions: AI NEVER places orders (signal only; "Smart order mein bharo" just fills the form, user presses BUY);
-AI runs ONLY on the "Scan trade" button (no auto loop, to save credits); daily call limit editable on the page; model Haiku.
-Panel under the Scalping chart (public/scalpai.mjs, mounted by scalp.mjs). Free/live in the browser: /api/chain (±10
-strikes; cells now carry instrument `token`) + index candles, then the same WebSocket subscribes the index + all chain tokens
-in "full" mode -> live OI, OI change since page open, PCR, max pain, support (max PE OI) / resistance (max CE OI), ATM IV,
-contract IV + Greeks. Analytics in public/optanalytics.mjs (Black-Scholes, r 6.5 %, expiry 15:30 IST, IV by bisection;
-Greeks = our estimates, "–" when premium is below intrinsic; max pain only over loaded strikes; build-up labels).
-Chain reloads around a new ATM when spot moves > 4 strikes (max once/min). Scan payload: contract (ltp, bid/ask, spread,
-OI, depth qty, Greeks, 1m indicators + last 30 candles), index (1m + 5m indicators, last 20 x 5m), chain rows + top OI
-changes since the last scan (or page open), time to close. POST /api/admin/ai {mode:"trade", payload, question} ->
-lib/aitrade.mjs: daily limit in Blobs admin `ai-usage` {day, used, limit} (default 100, 1..2000; counted before the call),
-news = last 48 h of `articles-<INDEX>` + `scan-<INDEX>` (only if that index is collected / scanned on the Sentiment page),
-one claudeMessage call with model claude-haiku-5-5 (fixed, not the site-wide model), 900 tokens, 8.5 s; parseSignal
-validates (symbol must be in the data and match CE/PE, target > entry > SL, entry within 15 % of premium) else WAIT + note.
-GET /api/admin/ai-usage, POST /api/admin/ai-limit {limit}. Last 15 signals in localStorage `sb-scalp-ai`.
-AI Scan ON/OFF switch (user request): while ON, one scan every 30 s / 1 / 2 / 5 min (localStorage `sb-scalp-ai-every`,
-default 1 min; next scan only after the previous answer), countdown + "🔔 Naya AI signal" toast when the signal changes.
-Turns itself OFF: market closed (Mon-Fri 9:15-15:30 IST, holidays unknown), daily limit reached, 3 failures in a row.
-Always OFF after a reload. Still never places orders. Test hook `?anytime=1` (localhost only): ignore hours, 10x faster.
-Tested: 97 unit tests; browser scalp suite 51/51 (fake chain OI ticks, fake Haiku answer, limit, auto ON/OFF, no order placed).
+User decisions: AI NEVER places orders; it picks ONE strike (CE or PE) from the WHOLE loaded chain of the selected index, or
+WAIT. "Scan trade" button = 1 Haiku call; the picked strike OPENS and the Smart order form is FILLED (user presses BUY).
+AI Scan ON = repeat every 30 s / 1 / 2 / 5 min (localStorage `sb-scalp-ai-every`), only shows the signal + "🔔 Naya AI signal"
+toast, never switches the open strike (button "Ye strike kholo + form bharo"). Turns itself OFF: market closed (Mon-Fri
+9:15-15:30 IST, holidays unknown), daily limit reached, 3 failures in a row, index changed; always OFF after reload.
+Daily call limit editable on the page. public/scalpai.mjs builds the payload: index {spot, prevClose, change %, 1m + 5m
+indicators (EMA 9/21, RSI 14, VWAP, ATR 14, Bollinger %b, trend, day high/low), last 30 x 1m, last 20 x 5m}, chain {expiry,
+lot, ATM, PCR + PCR before, max pain, support, resistance, ATM IV, rows [strike, CE sym/ltp/OI/OI chg, PE sym/ltp/OI/OI chg,
+CE/PE IV, CE/PE volume, CE/PE delta], top OI changes + build-up since the last scan}, openContract (optional: ltp, bid/ask,
+spread, depth qty, Greeks, 1m indicators), minutes to close. Analytics public/optanalytics.mjs (Black-Scholes, r 6.5 %,
+expiry 15:30 IST, IV by bisection, Greeks are our estimates; max pain only over loaded strikes).
+POST /api/admin/ai {mode:"trade", payload, question} -> lib/aitrade.mjs: needs chain rows; underlying BANKNIFTY or NIFTY only;
+daily limit in Blobs admin `ai-usage` {day, used, limit} (default 100, 1..2000; counted before the call); news = last 48 h of
+`articles-<INDEX>` + `scan-<INDEX>` (only if that index is collected / scanned on the Sentiment page); one claudeMessage call,
+model claude-haiku-5-5 (fixed), 900 tokens, 8.5 s; parseSignal validates (symbol must be in the chain / open contract and
+match CE/PE, target > entry > SL, entry within 15 % of premium) else WAIT + note. GET /api/admin/ai-usage, POST
+/api/admin/ai-limit {limit}. Last 15 signals in localStorage `sb-scalp-ai`. Test hook `?anytime=1` (localhost only).
+Charges: Smart order summary shows "Brokerage + charges" for BUY + SELL (at target), breakdown, break-even, max loss / target
+profit after charges. public/charges.mjs optionCharges() (unit tested): ₹20 per order, STT 0.15% of sell premium (Budget
+2026, from 1 Apr 2026; rounded to the rupee), NSE txn 0.03503%, SEBI ₹10/crore, stamp 0.003% on buy, GST 18% on
+brokerage+txn+SEBI. Rates from web sources (zerodha.com/charges was not reachable from the sandbox): estimate only.
+Search fix (same day): "NIFTY 50 / 100 / 200 / 500 / NEXT 50" are index names, not strikes, and an option query whose number
+matches no strike now falls through to the share / index search (before, "NIFTY 50" returned NIFTY options).
+Tested: 100 unit tests; browser scalp suite 62/62 (fake Kite WS with chain OI ticks + price control, fake NIFTY + BANKNIFTY
+options, fake Haiku strike pick, stateful fake order book) + all earlier suites pass.

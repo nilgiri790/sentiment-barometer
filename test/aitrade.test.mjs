@@ -6,8 +6,8 @@ import { aiTrade, parseSignal, buildTradePrompt, getUsage, setLimit, newsFor, TR
 const mem = () => { const m = new Map(); return { m, get: async (k) => (m.has(k) ? JSON.parse(m.get(k)) : null), setJSON: async (k, v) => void m.set(k, JSON.stringify(v)) }; };
 const NOW = Date.parse("2026-11-05T11:00:00+05:30");
 const P = {
-  contract: { symbol: "BANKNIFTY26NOV52000CE.NFO", underlying: "BANKNIFTY", type: "CE", strike: 52000, expiry: "2026-11-25", ltp: 412.5, greeks: { iv: 14.2, delta: 0.56 } },
-  underlying: { name: "NIFTY BANK", spot: 52140 },
+  index: { underlying: "BANKNIFTY", name: "NIFTY BANK", spot: 52140 },
+  openContract: { symbol: "BANKNIFTY26NOV52000CE.NFO", type: "CE", strike: 52000, ltp: 412.5, greeks: { iv: 14.2, delta: 0.56 } },
   chain: { columns: ["strike", "CE symbol", "CE ltp", "CE OI", "CE OI chg", "PE symbol", "PE ltp", "PE OI", "PE OI chg"], pcr: 0.92,
     rows: [[52000, "BANKNIFTY26NOV52000CE.NFO", 412.5, 90000, 5000, "BANKNIFTY26NOV52000PE.NFO", 280, 70000, -2000],
            [52100, "BANKNIFTY26NOV52100CE.NFO", 360, 80000, 1000, "BANKNIFTY26NOV52100PE.NFO", 330, 50000, 0]] },
@@ -28,7 +28,7 @@ test("signal checks: good BUY kept (prices on 0.05 tick); bad ones become WAIT w
 
 test("prompt: buy-only rule, data, news, language from settings", () => {
   const t = buildTradePrompt({ ...P, question: "Abhi CE lena theek hai?" }, [{ hoursAgo: 1.5, title: "RBI keeps rates unchanged", source: "Mint", score: 0.3 }], { reportLang: "english" });
-  assert.match(t, /ONLY BUYS options/); assert.match(t, /never suggest selling/); assert.match(t, /52140/);
+  assert.match(t, /ONLY BUYS options/); assert.match(t, /never suggest selling/); assert.match(t, /52140/); assert.match(t, /ONE best option strike/); assert.match(t, /WHOLE option chain/);
   assert.match(t, /RBI keeps rates/); assert.match(t, /simple English/); assert.match(t, /Abhi CE lena/);
 });
 
@@ -47,7 +47,10 @@ test("aiTrade: Haiku call, counts usage, stops at the daily limit, limit can be 
   await assert.rejects(() => setLimit(adminStore, 0, NOW), /1 se/);
   assert.equal((await setLimit(adminStore, 5, NOW)).used, 2);
   assert.equal((await getUsage(adminStore, NOW + 864e5)).used, 0, "new day starts at 0");
-  assert.equal((await aiTrade({ payload: {} }, o)).status, 400);
+  assert.match((await aiTrade({ payload: {} }, o)).error, /chain/);
+  assert.match((await aiTrade({ payload: { ...P, index: { underlying: "FINNIFTY" } } }, o)).error, /sirf BANK NIFTY aur NIFTY/);
+  const noOpen = await aiTrade({ payload: { ...P, openContract: null } }, { ...o, adminStore: mem() });
+  assert.equal(noOpen.result.signal, "BUY_PE", "AI can pick a strike from the chain without an open contract");
   assert.match((await aiTrade({ payload: P }, { ...o, apiKey: "" })).error, /Claude key/);
 });
 
