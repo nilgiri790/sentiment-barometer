@@ -6,6 +6,7 @@ import { createChart, CrosshairMode, LineStyle } from "./vendor/lightweight-char
 import { parseTicks, applyTick, barsFromTicks, IST, orderUpdate } from "./kiteticks.mjs";
 import { Bracket, checkPlan, tickFloor, LIVE } from "./scalpengine.mjs";
 import { mountTrade, tradingState } from "./trade.mjs";
+import { mountAI, AI_CSS } from "./scalpai.mjs";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const f2 = (v) => (v == null || !Number.isFinite(+v) ? "–" : (+v).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
@@ -22,15 +23,15 @@ const STATE_TXT = { idle: "Taiyaar", entry_open: "Entry order khula hai", active
 
 let H, root, chart = null, main = null, vol = null, plines = [];
 let target = null, tf = TFS[3], bars = [], ticks = [], ltp = null, bid = null, ask = null, depth = null, prevClose = null, lastCum = null;
-let ws = null, wsLive = false, retry = 0, subTok = null, ltpTimer = null, candleTimer = null, pollTimer = null, polling = false, pollN = 0;
-let engine = null, ctx = null, limits = null, trading = null, confirming = false;
+let ws = null, wsLive = false, retry = 0, subSet = new Set(), extraToks = [], ltpTimer = null, candleTimer = null, pollTimer = null, polling = false, pollN = 0;
+let ai = null, engine = null, ctx = null, limits = null, trading = null, confirming = false;
 // form: offsets are kept when the entry price changes (user's example: +10 target, -7 trigger, -6 SL limit)
-const F = { lots: 1, entry: null, target: null, trig: null, sl: null, chase: 30, product: "MIS", oneClick: false, off: { target: 10, trig: 7, sl: 6 }, entryTouched: false };
-try { const s = JSON.parse(localStorage.getItem(KEY + "-form") || "null"); if (s) { Object.assign(F.off, s.off || {}); F.chase = s.chase || 30; F.product = s.product === "NRML" ? "NRML" : "MIS"; } } catch {}
+const F = { lots: 1, entry: null, target: null, trig: null, sl: null, chase: 30, product: "MIS", oneClick: false, off: { target: 10, trig: 7, sl: 6 }, offPct: { target: 10, trig: 7, sl: 6 }, unit: "pt", entryTouched: false };
+try { const s = JSON.parse(localStorage.getItem(KEY + "-form") || "null"); if (s) { Object.assign(F.off, s.off || {}); Object.assign(F.offPct, s.offPct || {}); F.unit = s.unit === "pct" ? "pct" : "pt"; F.chase = s.chase || 30; F.product = s.product === "NRML" ? "NRML" : "MIS"; } } catch {}
 
 export function mountScalp(el, helpers) {
   H = helpers; root = el;
-  if (!document.getElementById("sp-css")) document.head.insertAdjacentHTML("beforeend", `<style id="sp-css">${CSS}</style>`);
+  if (!document.getElementById("sp-css")) document.head.insertAdjacentHTML("beforeend", `<style id="sp-css">${CSS}${AI_CSS}</style>`);
   root.innerHTML = `
     <div class="page-head"><div><h1>Scalping</h1><p class="sub">Option ka live chart, market depth, aur ek click mein BUY + target + stop-loss.</p></div></div>
     <section class="panel"><div class="panel-b">
@@ -48,6 +49,7 @@ export function mountScalp(el, helpers) {
           <div class="sp-ba tnum" id="spba"></div>
           <div id="spchart"><div class="empty sp-empty">Upar option search kariye (jaise <b>banknifty 52000 ce</b>). Chart, depth aur order panel yahan khulenge.</div></div>
         </section>
+        <section class="panel" id="spai"></section>
         <section class="panel" id="spdepthp" hidden><div class="panel-h"><h2>Market depth</h2><span class="right label" id="spdq"></span></div><div class="panel-b" id="spdepth"></div></section>
       </div>
       <div class="sp-right">
@@ -57,6 +59,8 @@ export function mountScalp(el, helpers) {
       </div>
     </div>
     <footer>Scalping mein nuksan jaldi ho sakta hai. Stop-loss is page se chalta hai: page band = SL band. Ye investment advice nahi hai.</footer>`;
+  ai = mountAI(root.querySelector("#spai"), { H, setTokens: (list) => { extraToks = list; subscribe(); }, applySignal,
+    state: () => ({ target, ltp, bid, ask, depth, wsLive }) });
   const qIn = root.querySelector("#q4");
   const ac = H.makeAC(qIn, root.querySelector("#ac4"), { filter: (o) => o.option, onChoose: (o) => { qIn.value = o.name; choose(o); } });
   root.querySelector("#sform4").onsubmit = async (e) => {
@@ -71,7 +75,24 @@ export function mountScalp(el, helpers) {
   window.addEventListener("hashchange", () => { if (engine?.live && !location.hash.startsWith("#/scalp")) H.toast("Scalping bracket chal raha hai. Is tab ko band mat kariye, SL isi se chalta hai."); });
   resume();
 }
-export function onShowScalp() { if (target) { orderPanel(); renderBracket(); } }
+export function onShowScalp() { if (target) { orderPanel(); renderBracket(); ai?.refresh(); } }
+
+// AI panel -> "Smart order mein bharo": open that contract if needed, fill entry / target / SL trigger / SL limit.
+// It never sends an order: the user presses BUY (and confirms) as always.
+async function applySignal(sig) {
+  if (engine?.live) { H.toast("Ek bracket chal raha hai. Naya order uske poora hone ke baad."); return false; }
+  if (sig.symbol !== target?.symbol) {
+    root.querySelector("#q4").value = sig.name;
+    await choose({ symbol: sig.symbol, name: sig.name, lot_size: sig.lot });
+    if (target?.symbol !== sig.symbol) return false;
+  }
+  const gap = F.sl > 0 && F.trig > 0 ? r2(F.sl - F.trig) : 0;          // keep your usual trigger -> limit gap (e.g. 93 -> 94)
+  F.entry = snap(sig.entry); F.entryTouched = true; F.target = snap(sig.target); F.trig = snap(sig.stopLoss);
+  F.sl = snap(Math.max(TICK, Math.min(sig.stopLoss + gap, F.entry - TICK)));
+  confirming = false; orderPanel();
+  root.querySelector("#sporder").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  return true;
+}
 
 // ---------- choose a contract ----------
 async function choose(o, keepEngine = false) {
@@ -83,6 +104,7 @@ async function choose(o, keepEngine = false) {
   root.querySelector("#spdepthp").hidden = true;
   [trading] = await Promise.all([tradingState(true), loadMeta()]);
   limits = trading?.trading?.limits || null;
+  ai.setContract(target, metaP);
   await loadBars();
   orderPanel(); renderBracket(); plain();
   connect();
@@ -165,7 +187,7 @@ async function connect() {
   catch (e) { wsLive = false; setStatus("warn", "Live ticks nahi: " + e.message.slice(0, 60)); startLtpPoll(); return; }
   ws = new WebSocket(`${WSBASE}?api_key=${encodeURIComponent(auth.api_key)}&access_token=${encodeURIComponent(auth.access_token)}`);
   ws.binaryType = "arraybuffer";
-  ws.onopen = () => { retry = 0; wsLive = true; subTok = null; subscribe(); stopLtpPoll(); setStatus("live", "Live · Zerodha ticks"); };
+  ws.onopen = () => { retry = 0; wsLive = true; subSet = new Set(); subscribe(); stopLtpPoll(); setStatus("live", "Live · Zerodha ticks"); };
   ws.onmessage = (e) => {
     if (typeof e.data === "string") {
       const u = orderUpdate(e.data);
@@ -180,10 +202,12 @@ async function connect() {
 }
 function subscribe() {
   if (!ws || ws.readyState !== 1 || !target?.token) return;
-  if (subTok === target.token) return;
-  if (subTok) ws.send(JSON.stringify({ a: "unsubscribe", v: [subTok] }));
-  subTok = target.token;
-  ws.send(JSON.stringify({ a: "subscribe", v: [subTok] })); ws.send(JSON.stringify({ a: "mode", v: ["full", [subTok]] }));
+  // the open contract first, then the AI panel's index + option chain tokens (all in "full" mode: OI + depth)
+  const want = new Set([target.token, ...extraToks].filter(Boolean));
+  const add = [...want].filter((t) => !subSet.has(t)), del = [...subSet].filter((t) => !want.has(t));
+  if (del.length) ws.send(JSON.stringify({ a: "unsubscribe", v: del }));
+  if (add.length) { ws.send(JSON.stringify({ a: "subscribe", v: add })); ws.send(JSON.stringify({ a: "mode", v: ["full", add] })); }
+  subSet = want;
 }
 function startLtpPoll() {                                   // fallback: light last-price poll every 3 s (admin)
   if (ltpTimer || !H.isAdmin()) return;
@@ -194,6 +218,7 @@ function startLtpPoll() {                                   // fallback: light l
 }
 function stopLtpPoll() { clearInterval(ltpTimer); ltpTimer = null; }
 function onTick(t, polled = false) {
+  if (!polled) ai?.onTick(t);
   if (!target || (t.token !== target.token && !polled)) return;
   const ms = Date.now(), dv = t.volume != null && lastCum != null ? Math.max(0, t.volume - lastCum) : 0;
   if (t.volume != null) lastCum = t.volume;
@@ -221,7 +246,14 @@ function drawDepth() {
 const snap = (v) => (v > 0 ? r2(Math.round(v / TICK) * TICK) : null);
 function fromEntry() {                                      // keep the point offsets when the entry moves
   if (!(F.entry > 0)) return;
-  F.target = snap(F.entry + F.off.target); F.trig = snap(F.entry - F.off.trig); F.sl = snap(F.entry - F.off.sl);
+  F.target = priceOf("target", 1); F.trig = priceOf("trig", -1); F.sl = priceOf("sl", -1);
+}
+// the +/- boxes are points (+10 = 10 rupees) or percent of the entry (+10 = 10%), as chosen in "Target/SL mein"
+const offs = () => (F.unit === "pct" ? F.offPct : F.off);
+function priceOf(key, sign, v = offs()[key]) { return F.entry > 0 && v >= 0 ? snap(F.unit === "pct" ? F.entry * (1 + (sign * v) / 100) : F.entry + sign * v) : null; }
+function offsetOf(price, sign) { if (!(price > 0 && F.entry > 0)) return null; const d = sign * (price - F.entry); return r2(F.unit === "pct" ? (d / F.entry) * 100 : d); }
+function keepOffsets() {                                     // remember the current prices as offsets in the chosen unit
+  for (const [k, sg] of [["target", 1], ["trig", -1], ["sl", -1]]) { const o = offsetOf(F[k], sg); if (o != null) offs()[k] = o; }
 }
 function plan() {
   return { qty: (F.lots || 0) * (target?.lot || 0), entry: F.entry, target: F.target ?? "", slTrigger: F.trig ?? "", slLimit: F.sl ?? "", chaseSec: F.chase, tick: TICK };
@@ -241,15 +273,18 @@ function orderPanel() {
   if (engine && (engine.live || engine.state === "idle")) { box.innerHTML = `<div class="panel-h"><h2>Smart order</h2></div><div class="panel-b"><div class="note">Ek bracket chal raha hai (upar dekhiye). Naya trade uske poora hone ke baad.</div></div>`; return; }
   if (F.entry == null && ltp) { F.entry = snap(ltp); fromEntry(); }
   const block = why();
+  // points box next to each price: type the profit / loss in points, the price fills itself (and the other way round)
+  const pts = (id, sign, tone, title) => `<span class="sp-pts ${tone}" title="${title}"><i>${sign}</i><input class="field" id="${id}" type="number" inputmode="decimal" step="${F.unit === "pct" ? 0.5 : 0.05}" min="0" aria-label="${title}"><b class="sp-u">${F.unit === "pct" ? "%" : ""}</b></span>`;
   const num = (id, v, step = TICK) => `<input class="field" id="${id}" type="number" inputmode="decimal" step="${step}" min="0" value="${v ?? ""}">`;
   box.innerHTML = `<div class="panel-h"><h2>Smart order</h2><span class="right"><span class="pill p-opt">BUY</span></span></div>
     <div class="panel-b sp-form">
       ${block ? `<div class="sp-warn">${block}</div>` : ""}
       <div class="sp-row"><label class="label" for="splots">Lots</label><div class="sp-in"><button type="button" class="btn2 sm" data-lot="-1" aria-label="Kam">−</button>${num("splots", F.lots, 1)}<button type="button" class="btn2 sm" data-lot="1" aria-label="Zyada">+</button><span class="sp-off" id="spqty"></span></div></div>
       <div class="sp-row"><label class="label" for="spentry">Entry (Buy limit)<small class="sp-follow" id="spfollow"></small></label><div class="sp-in">${num("spentry", F.entry)}<button type="button" class="btn2 sm" id="spuseltp" title="Abhi ka daam">LTP</button><button type="button" class="btn2 sm" id="spuseask" title="Sabse sasta seller">Ask</button></div></div>
-      <div class="sp-row"><label class="label" for="sptgt">Target</label><div class="sp-in">${num("sptgt", F.target)}<span class="sp-off up" id="offt"></span></div></div>
-      <div class="sp-row"><label class="label" for="sptrig">SL trigger</label><div class="sp-in">${num("sptrig", F.trig)}<span class="sp-off" id="offg"></span></div></div>
-      <div class="sp-row"><label class="label" for="spsl">SL limit</label><div class="sp-in">${num("spsl", F.sl)}<span class="sp-off down" id="offs"></span></div></div>
+      <div class="sp-row"><span class="label">Target/SL mein</span><div class="seg" id="spunit"><button type="button" data-u="pt" class="${F.unit === "pt" ? "on" : ""}">Points (₹)</button><button type="button" data-u="pct" class="${F.unit === "pct" ? "on" : ""}">Percent (%)</button></div></div>
+      <div class="sp-row"><label class="label" for="sptgt">Target</label><div class="sp-in">${num("sptgt", F.target)}${pts("offt", "+", "up", "Target: entry se kitne point upar")}</div></div>
+      <div class="sp-row"><label class="label" for="sptrig">SL trigger</label><div class="sp-in">${num("sptrig", F.trig)}${pts("offg", "−", "", "SL trigger: entry se kitne point neeche")}</div></div>
+      <div class="sp-row"><label class="label" for="spsl">SL limit</label><div class="sp-in">${num("spsl", F.sl)}${pts("offs", "−", "down", "SL limit: entry se kitne point neeche")}</div></div>
       <div class="sp-row"><label class="label" for="spchase">SL na bhare to</label><div class="sp-in">${num("spchase", F.chase, 1)}<span class="sp-off" style="min-width:120px;text-align:left">sec baad abhi ke daam par</span></div></div>
       <div class="sp-row"><span class="label">Product</span><div class="seg" id="spprod"><button type="button" data-p="MIS" class="${F.product === "MIS" ? "on" : ""}">MIS (intraday)</button><button type="button" data-p="NRML" class="${F.product === "NRML" ? "on" : ""}">NRML</button></div></div>
       <div class="sp-sum tnum" id="spsum"></div>
@@ -268,9 +303,15 @@ function orderPanel() {
   $("spentry").onchange = () => { if (F.entry > 0) setEntry(F.entry); };
   $("spuseltp").onclick = () => ltp && setEntry(ltp);
   $("spuseask").onclick = () => (ask || ltp) && setEntry(ask || ltp);
-  const offIn = (id, key, sign) => ($(id).oninput = () => { const v = val(id); F[key] = v; if (v > 0 && F.entry > 0) F.off[key] = r2(sign * (v - F.entry)); calc(); });
+  const offIn = (id, key, sign) => ($(id).oninput = () => { const v = val(id); F[key] = v; const o = offsetOf(v, sign); if (o != null) offs()[key] = o; calc(); });
   offIn("sptgt", "target", 1); offIn("sptrig", "trig", -1); offIn("spsl", "sl", -1);
+  const ptsIn = (id, key, priceId, sign) => ($(id).oninput = () => {       // points typed -> price
+    const v = val(id); if (v == null || v < 0) return;
+    offs()[key] = v; if (F.entry > 0) { F[key] = priceOf(key, sign, v); $(priceId).value = F[key] ?? ""; } calc();
+  });
+  ptsIn("offt", "target", "sptgt", 1); ptsIn("offg", "trig", "sptrig", -1); ptsIn("offs", "sl", "spsl", -1);
   $("spchase").oninput = () => { F.chase = Math.round(val("spchase") || 0); calc(); };
+  $("spunit").onclick = (e) => { const b = e.target.closest("button"); if (!b || b.dataset.u === F.unit) return; F.unit = b.dataset.u; keepOffsets(); saveForm(); orderPanel(); };
   $("spprod").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; F.product = b.dataset.p; $("spprod").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b)); saveForm(); };
   $("sp1c").onchange = (e) => { F.oneClick = e.target.checked; confirming = false; $("spconfirm").innerHTML = ""; H.toast(F.oneClick ? "One-click ON: button dabate hi order chala jaayega." : "One-click OFF: har order se pehle confirm."); };
   $("spgo").onclick = go;
@@ -282,7 +323,8 @@ function calc() {
   const p = plan(), q = p.qty, off = (v, s) => (v > 0 && F.entry > 0 ? `${s > 0 ? "+" : "−"}${f2(Math.abs(v - F.entry))}` : "");
   $("spqty").textContent = target?.lot ? `= ${q} qty` : "";
   $("spfollow").textContent = F.entryTouched ? "" : "live daam ke saath";
-  $("offt").textContent = off(F.target, 1); $("offg").textContent = off(F.trig, -1); $("offs").textContent = off(F.sl, -1);
+  const setPts = (id, v, s) => { const el = $(id); if (el && document.activeElement !== el) el.value = offsetOf(v, s) ?? ""; };
+  setPts("offt", F.target, 1); setPts("offg", F.trig, -1); setPts("offs", F.sl, -1);
   let err = checkPlan(p);
   if (!err && limits && F.lots > limits.max_lots) err = `Ek order ki limit ${limits.max_lots} lot hai (API Keys mein badal sakte hain)`;
   if (!err && limits && F.entry * q > limits.max_value) err = `Rakam ₹${Math.round(F.entry * q).toLocaleString("en-IN")} limit ₹${limits.max_value.toLocaleString("en-IN")} se zyada hai`;
@@ -365,7 +407,7 @@ function lockSearch() {
 function save() {
   try { if (!engine) localStorage.removeItem(KEY); else localStorage.setItem(KEY, JSON.stringify({ ctx, b: engine.toJSON(), at: Date.now() })); } catch {}
 }
-function saveForm() { try { localStorage.setItem(KEY + "-form", JSON.stringify({ off: F.off, chase: F.chase, product: F.product })); } catch {} }
+function saveForm() { try { localStorage.setItem(KEY + "-form", JSON.stringify({ off: F.off, offPct: F.offPct, unit: F.unit, chase: F.chase, product: F.product })); } catch {} }
 async function resume() {
   let s = null; try { s = JSON.parse(localStorage.getItem(KEY) || "null"); } catch {}
   if (!s?.ctx || !s.b) return;
@@ -425,6 +467,11 @@ const CSS = `
 .sp-row{display:grid;grid-template-columns:118px minmax(0,1fr);align-items:center;gap:8px}
 .sp-in{display:flex;gap:6px;align-items:center;min-width:0}
 .sp-in .field{text-align:right;font-variant-numeric:tabular-nums;min-width:0}
+.sp-pts{display:flex;align-items:center;gap:3px;flex:none;width:96px}
+.sp-pts i{font-style:normal;font-weight:700;font-size:13px;color:var(--muted);width:9px;text-align:center}
+.sp-pts.up i{color:var(--pos)}.sp-pts.down i{color:var(--neg)}
+.sp-pts .sp-u{font-size:12px;color:var(--muted);width:10px;font-weight:600}
+.sp-pts .field{height:32px;padding:0 6px;font-size:12.5px;text-align:right}
 .sp-off{font-size:12px;color:var(--muted);min-width:56px;text-align:right;font-variant-numeric:tabular-nums}
 .sp-sum{display:grid;grid-template-columns:auto 1fr auto 1fr;gap:6px 10px;font-size:12px;padding:10px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2)}
 .sp-sum span{color:var(--muted)}.sp-sum b{font-weight:600}

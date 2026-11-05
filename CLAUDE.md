@@ -207,7 +207,8 @@ Sidebar item "Scalping" below Backtest (#/scalp, #view-scalp, lazy public/scalp.
 toast, isAdmin}). Option-only search; chart 1s/5s/15s (ticks only) + 1m/5m (/api/candles + ticks); Zerodha WebSocket in
 "full" mode -> bid/ask + 5-level depth (kiteticks parses 184-byte packets) and order updates (text {type:"order"}).
 No WebSocket -> GET /api/admin/ltp every 3 s. Smart order: lots, entry (follows live price until typed), target / SL trigger /
-SL limit kept as point offsets from entry (default +10/-7/-6, saved in localStorage `sb-scalp-form`), chase seconds (3..600,
+SL limit kept as offsets from entry in Points (₹) or Percent (%) (toggle "Target/SL mein"; the +/- boxes are editable;
+default +10/-7/-6; saved in localStorage `sb-scalp-form`), chase seconds (3..600,
 default 30), MIS/NRML, one-click toggle (OFF by default -> confirm box). Engine public/scalpengine.mjs (pure, unit tested):
 BUY LIMIT -> on fill SELL LIMIT target -> price <= trigger once -> cancel target, wait for CANCELLED, then SELL LIMIT at SL limit
 -> not filled in chaseSec -> MODIFY that SL order to the current price (tick floor), repeated every chaseSec. Only one SELL open
@@ -220,3 +221,25 @@ Option SELL also refused if held qty minus pending SELL orders < qty (no writing
 lock and the value limit (it only closes). THE DEPLOYED RELAY MUST BE UPDATED (Cloud Shell: git pull && bash relay/setup.sh),
 otherwise cancel/modify get "Relay purana hai". Tested: 88 unit tests; browser scalp suite 26/26 (fake Kite WS with price
 control + stateful fake order book in the stand-in server) + all earlier suites pass. NOT tested against real Kite.
+
+## Scalping AI trade assistant (2026-11-05)
+User decisions: AI NEVER places orders (signal only; "Smart order mein bharo" just fills the form, user presses BUY);
+AI runs ONLY on the "Scan trade" button (no auto loop, to save credits); daily call limit editable on the page; model Haiku.
+Panel under the Scalping chart (public/scalpai.mjs, mounted by scalp.mjs). Free/live in the browser: /api/chain (±10
+strikes; cells now carry instrument `token`) + index candles, then the same WebSocket subscribes the index + all chain tokens
+in "full" mode -> live OI, OI change since page open, PCR, max pain, support (max PE OI) / resistance (max CE OI), ATM IV,
+contract IV + Greeks. Analytics in public/optanalytics.mjs (Black-Scholes, r 6.5 %, expiry 15:30 IST, IV by bisection;
+Greeks = our estimates, "–" when premium is below intrinsic; max pain only over loaded strikes; build-up labels).
+Chain reloads around a new ATM when spot moves > 4 strikes (max once/min). Scan payload: contract (ltp, bid/ask, spread,
+OI, depth qty, Greeks, 1m indicators + last 30 candles), index (1m + 5m indicators, last 20 x 5m), chain rows + top OI
+changes since the last scan (or page open), time to close. POST /api/admin/ai {mode:"trade", payload, question} ->
+lib/aitrade.mjs: daily limit in Blobs admin `ai-usage` {day, used, limit} (default 100, 1..2000; counted before the call),
+news = last 48 h of `articles-<INDEX>` + `scan-<INDEX>` (only if that index is collected / scanned on the Sentiment page),
+one claudeMessage call with model claude-haiku-5-5 (fixed, not the site-wide model), 900 tokens, 8.5 s; parseSignal
+validates (symbol must be in the data and match CE/PE, target > entry > SL, entry within 15 % of premium) else WAIT + note.
+GET /api/admin/ai-usage, POST /api/admin/ai-limit {limit}. Last 15 signals in localStorage `sb-scalp-ai`.
+AI Scan ON/OFF switch (user request): while ON, one scan every 30 s / 1 / 2 / 5 min (localStorage `sb-scalp-ai-every`,
+default 1 min; next scan only after the previous answer), countdown + "🔔 Naya AI signal" toast when the signal changes.
+Turns itself OFF: market closed (Mon-Fri 9:15-15:30 IST, holidays unknown), daily limit reached, 3 failures in a row.
+Always OFF after a reload. Still never places orders. Test hook `?anytime=1` (localhost only): ignore hours, 10x faster.
+Tested: 97 unit tests; browser scalp suite 51/51 (fake chain OI ticks, fake Haiku answer, limit, auto ON/OFF, no order placed).
