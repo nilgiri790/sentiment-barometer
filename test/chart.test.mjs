@@ -1,7 +1,7 @@
 // Offline tests for the live chart: Kite binary ticks, candle building, /api/candles, admin ticker. Run with: npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseTicks, applyTick, barsFromTicks, bucketOf, IST } from "../public/kiteticks.mjs";
+import { parseTicks, applyTick, barsFromTicks, bucketOf, IST, orderUpdate } from "../public/kiteticks.mjs";
 import { handlePrice } from "../lib/prices.mjs";
 import { handleAdmin } from "../lib/admin.mjs";
 
@@ -21,7 +21,7 @@ test("parse Kite ticks: quote, index, ltp, heartbeat", () => {
     { len: 8, ints: [111, 9905] },                                                            // ltp mode
   ]);
   const t = parseTicks(msg);
-  assert.deepEqual(t[0], { token: 408065, ltp: 418.35, volume: 123456, open: 410, high: 420, low: 405, close: 411.2 });
+  assert.deepEqual(t[0], { token: 408065, ltp: 418.35, volume: 123456, open: 410, high: 420, low: 405, close: 411.2, buyQty: 0, sellQty: 0 });
   assert.deepEqual(t[1], { token: 260105, ltp: 52140, index: true, high: 52300, low: 51900, open: 52000, close: 51800 });
   assert.deepEqual(t[2], { token: 111, ltp: 99.05 });
   assert.deepEqual(parseTicks(new ArrayBuffer(1)), [], "heartbeat");
@@ -72,4 +72,19 @@ test("admin ticker: login + today's Zerodha login needed", async () => {
   const { loadSecrets, saveSecrets } = await import("../lib/secrets.mjs");
   const all = await loadSecrets(store, env); all.kite = { ...KITE }; await saveSecrets(store, all, env);
   assert.deepEqual((await call("ticker")).body, { api_key: "kk", access_token: "tok" });
+});
+
+test("full mode packet (184 bytes): best bid/ask + 5-level depth; order updates from text messages", () => {
+  const buf = new ArrayBuffer(2 + 2 + 184), v = new DataView(buf);
+  v.setInt16(0, 1); v.setInt16(2, 184); const p = 4;
+  v.setInt32(p, 12345); v.setInt32(p + 4, 10125); v.setInt32(p + 16, 900); v.setInt32(p + 48, 77000);
+  for (let i = 0; i < 5; i++) {
+    v.setInt32(p + 64 + i * 12, 30 * (i + 1)); v.setInt32(p + 68 + i * 12, 10120 - i * 5); v.setInt16(p + 72 + i * 12, i + 1);
+    v.setInt32(p + 124 + i * 12, 15 * (i + 1)); v.setInt32(p + 128 + i * 12, 10130 + i * 5); v.setInt16(p + 132 + i * 12, 2);
+  }
+  const [t] = parseTicks(buf);
+  assert.equal(t.ltp, 101.25); assert.equal(t.bid, 101.2); assert.equal(t.ask, 101.3); assert.equal(t.oi, 77000);
+  assert.equal(t.depth.buy.length, 5); assert.deepEqual(t.depth.buy[4], { qty: 150, price: 101, orders: 5 }); assert.equal(t.depth.sell[2].price, 101.4);
+  assert.deepEqual(orderUpdate('{"type":"order","data":{"order_id":"1","status":"COMPLETE"}}'), { order_id: "1", status: "COMPLETE" });
+  assert.equal(orderUpdate('{"type":"error","data":"x"}'), null); assert.equal(orderUpdate("not json"), null);
 });

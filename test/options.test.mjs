@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseNfo, parseOptionQuery, searchOptions, optionChain } from "../lib/options.mjs";
 import { handlePrice } from "../lib/prices.mjs";
-import { placeOrder } from "../lib/orders.mjs";
+import { placeOrder, orderStatus, changeOrder } from "../lib/orders.mjs";
 import { handleRelay, sign, validOrder } from "../relay/relay.mjs";
 
 const NOW = Date.parse("2026-11-04T08:00:00Z");
@@ -19,7 +19,7 @@ for (const k of [51500, 52000, 52500]) for (const t of ["CE", "PE"]) {
 }
 CSV += row(3001, "NIFTY26N1024500CE", "NIFTY", "2026-11-10", 24500, "CE", 75) + "9,9,NIFTY26NOVFUT,\"NIFTY\",0,2026-11-25,0,0.05,75,FUT,NFO-FUT,NFO\n";
 
-function net({ held = 0, relaySecret = "rs", calls = [] } = {}) {
+function net({ held = 0, relaySecret = "rs", calls = [], orders = [], hist = {} } = {}) {
   return async (url, o = {}) => {
     calls.push(url);
     if (url.endsWith("/instruments/NFO")) return ok(CSV);
@@ -28,9 +28,12 @@ function net({ held = 0, relaySecret = "rs", calls = [] } = {}) {
       return ok({ data: Object.fromEntries(ids.map((i, n) => [i, { instrument_token: 1500, last_price: 100 + n, ohlc: { close: 95 + n }, oi: 1000 * n, volume: 50 }])) }); }
     if (url.includes("/historical/")) return ok({ data: { candles: [["2026-11-04T09:15:00+0530", 1, 130, 110, 120, 0]] } });
     if (url.includes("/portfolio/positions")) return ok({ data: { net: [{ exchange: "NFO", tradingsymbol: "BANKNIFTY26NOV52000CE", quantity: held }] } });
-    if (url.startsWith("https://relay.example/order")) {
-      const r = await handleRelay({ method: "POST", path: "/order", body: o.body, headers: { "x-relay-signature": o.headers["x-relay-signature"] } },
-        { secret: relaySecret, fetchImpl: async (u2, o2) => { calls.push(u2 + " " + o2.body); return ok({ status: "success", data: { order_id: "OPT123" } }); } });
+    if (url === "https://api.kite.trade/orders") return ok({ data: orders });
+    if (url.startsWith("https://api.kite.trade/orders/")) { const id = url.split("/").pop(); return hist[id] ? ok({ status: "success", data: hist[id] }) : { ok: false, status: 404, json: async () => ({ message: "Order not found" }) }; }
+    if (url.startsWith("https://relay.example/")) {
+      const path = "/" + url.split("/").pop();
+      const r = await handleRelay({ method: "POST", path, body: o.body, headers: { "x-relay-signature": o.headers["x-relay-signature"] } },
+        { secret: relaySecret, fetchImpl: async (u2, o2) => { calls.push(`${o2.method} ${u2} ${o2.body || ""}`); return ok({ status: "success", data: { order_id: u2.includes("/regular/") ? u2.split("/").pop() : "OPT123" } }); } });
       return { ok: r.status < 300, status: r.status, json: async () => r.json };
     }
     throw new Error("unexpected " + url);
@@ -105,7 +108,7 @@ test("options BUY goes through: quantity = lots x lot size, price on 0.05 tick",
   const r = await placeOrder({ ...BUY, lots: 1 }, SECRETS({ allow_fno: "yes" }), { fetchImpl: net({ calls }), cache: mem(), now: Date.now() });
   assert.equal(r.ok, true, JSON.stringify(r)); assert.equal(r.order_id, "OPT123");
   assert.equal(r.order.quantity, 35); assert.equal(r.order.price, 120.55); assert.equal(r.order.exchange, "NFO");
-  const sent = new URLSearchParams(calls.find((c) => c.startsWith("https://api.kite.trade/orders/regular")).split(" ")[1]);
+  const sent = new URLSearchParams(calls.find((c) => c.startsWith("POST https://api.kite.trade/orders/regular")).split(" ")[2]);
   assert.equal(sent.get("exchange"), "NFO"); assert.equal(sent.get("quantity"), "35"); assert.equal(sent.get("product"), "NRML");
 });
 
@@ -115,6 +118,46 @@ test("options SELL only what you hold (no writing)", async () => {
   assert.match(r.error, /writing/);
   r = await placeOrder(SELL, SECRETS({ allow_fno: "yes" }), { fetchImpl: net({ held: 35 }), cache: mem(), now: Date.now() });
   assert.equal(r.ok, true, JSON.stringify(r));
+});
+
+test("options SELL: a second SELL on the same qty is refused (target + SL can never both be open)", async () => {
+  const SELL = { ...BUY, side: "SELL", order_type: "LIMIT", price: 130, product: "NRML" };
+  const open = [{ exchange: "NFO", tradingsymbol: "BANKNIFTY26NOV52000CE", transaction_type: "SELL", status: "OPEN", quantity: 35, filled_quantity: 0, pending_quantity: 35 }];
+  let r = await placeOrder(SELL, SECRETS({ allow_fno: "yes" }), { fetchImpl: net({ held: 35, orders: open }), cache: mem(), now: Date.now() });
+  assert.match(r.error, /pehle se laga/);
+  r = await placeOrder(SELL, SECRETS({ allow_fno: "yes" }), { fetchImpl: net({ held: 35, orders: [{ ...open[0], status: "CANCELLED", pending_quantity: 0 }] }), cache: mem(), now: Date.now() });
+  assert.equal(r.ok, true, JSON.stringify(r));
+});
+
+test("order change: cancel any open order, re-price only an open SELL LIMIT; status from Zerodha", async () => {
+  const sellOpen = { order_id: "251105000001", status: "OPEN", transaction_type: "SELL", order_type: "LIMIT", exchange: "NFO", tradingsymbol: "BANKNIFTY26NOV52000CE", price: 94, quantity: 35, filled_quantity: 0 };
+  const buyOpen = { ...sellOpen, order_id: "251105000002", transaction_type: "BUY" };
+  const done = { ...sellOpen, order_id: "251105000003", status: "COMPLETE", filled_quantity: 35, average_price: 94 };
+  const hist = { [sellOpen.order_id]: [{ ...sellOpen, status: "PUT ORDER REQ RECEIVED" }, sellOpen], [buyOpen.order_id]: [buyOpen], [done.order_id]: [done] };
+  const calls = [], f = net({ hist, calls }), S = SECRETS({ allow_fno: "yes" }), now = Date.now();
+  const st = await orderStatus(done.order_id, S, { fetchImpl: f });
+  assert.equal(st.order.status, "COMPLETE"); assert.equal(st.order.average_price, 94);
+  assert.equal((await orderStatus("abc", S, { fetchImpl: f })).status, 400);
+  let r = await changeOrder({ op: "modify", order_id: sellOpen.order_id, price: 91.23 }, S, { fetchImpl: f, now });
+  assert.equal(r.ok, true, JSON.stringify(r)); assert.equal(r.price, 91.25);
+  assert.ok(calls.some((c) => c.startsWith(`PUT https://api.kite.trade/orders/regular/${sellOpen.order_id} order_type=LIMIT&price=91.25`)), calls.join("\n"));
+  r = await changeOrder({ op: "modify", order_id: buyOpen.order_id, price: 200 }, S, { fetchImpl: f, now });
+  assert.match(r.error, /Sirf SELL LIMIT/);
+  r = await changeOrder({ op: "cancel", order_id: buyOpen.order_id }, S, { fetchImpl: f, now });
+  assert.equal(r.ok, true); assert.ok(calls.some((c) => c.startsWith(`DELETE https://api.kite.trade/orders/regular/${buyOpen.order_id}`)));
+  r = await changeOrder({ op: "cancel", order_id: done.order_id }, S, { fetchImpl: f, now });
+  assert.equal(r.status, 409); assert.equal(r.order.status, "COMPLETE");
+});
+
+test("relay: cancel/modify need a signature and a numeric order id", async () => {
+  const body = JSON.stringify({ ts: 1000, order_id: "12; rm", kite: { api_key: "a", access_token: "b" } });
+  const r1 = await handleRelay({ method: "POST", path: "/cancel", body, headers: { "x-relay-signature": "x".repeat(64) } }, { secret: "rs", now: 1000, fetchImpl: () => { throw new Error("no"); } });
+  assert.equal(r1.status, 401);
+  const r2 = await handleRelay({ method: "POST", path: "/cancel", body, headers: { "x-relay-signature": sign("rs", body) } }, { secret: "rs", now: 1000, fetchImpl: () => { throw new Error("no"); } });
+  assert.match(r2.json.error, /order id/);
+  const b3 = JSON.stringify({ ts: 1000, order_id: "123", price: -5, kite: { api_key: "a", access_token: "b" } });
+  const r3 = await handleRelay({ method: "POST", path: "/modify", body: b3, headers: { "x-relay-signature": sign("rs", b3) } }, { secret: "rs", now: 1000, fetchImpl: () => { throw new Error("no"); } });
+  assert.match(r3.json.error, /price/);
 });
 
 test("relay rules for NFO", () => {

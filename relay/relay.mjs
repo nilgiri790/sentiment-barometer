@@ -1,6 +1,6 @@
 // Order relay: runs on Google Cloud Run (your Firebase project) behind a STATIC IP, because Zerodha only accepts
 // API orders from a registered static IP (SEBI rule from 1 April 2026). It does one job: forward a signed order
-// from your Netlify website to Zerodha. Requests without the right HMAC signature (RELAY_SECRET) are refused.
+// from your Netlify website to Zerodha (place, and for the scalping page: cancel / change price). Requests without the right HMAC signature (RELAY_SECRET) are refused.
 import crypto from "node:crypto";
 
 const MAX_AGE_MS = 60_000;     // a signed request is only valid for 60 seconds (stops replays)
@@ -30,7 +30,7 @@ export async function handleRelay({ method, path, body = "", headers = {} }, { s
     try { ip = (await (await fetchImpl("https://api.ipify.org?format=json", { signal: AbortSignal.timeout(4000) })).json()).ip; } catch {}
     return ok({ ok: true, ip, configured: !!secret });
   }
-  if (method !== "POST" || path !== "/order") return ok({ error: "not found" }, 404);
+  if (method !== "POST" || !["/order", "/cancel", "/modify"].includes(path)) return ok({ error: "not found" }, 404);
   if (!secret) return ok({ error: "relay not configured" }, 503);
 
   const sig = String(headers["x-relay-signature"] || "");
@@ -40,29 +40,43 @@ export async function handleRelay({ method, path, body = "", headers = {} }, { s
   let msg;
   try { msg = JSON.parse(body); } catch { return ok({ error: "bad json" }, 400); }
   if (!Number.isFinite(msg.ts) || Math.abs(now - msg.ts) > MAX_AGE_MS) return ok({ error: "request expired" }, 401);
-  const o = msg.order, k = msg.kite || {};
-  const bad = validOrder(o);
-  if (bad) return ok({ error: bad }, 400);
+  const k = msg.kite || {};
   if (!k.api_key || !k.access_token) return ok({ error: "zerodha login missing" }, 400);
+  const kiteHeaders = { "X-Kite-Version": "3", Authorization: `token ${k.api_key}:${k.access_token}`, "content-type": "application/x-www-form-urlencoded" };
 
-  const form = new URLSearchParams({
-    tradingsymbol: o.tradingsymbol, exchange: o.exchange, transaction_type: o.transaction_type,
-    order_type: o.order_type, quantity: String(o.quantity), product: o.product, validity: "DAY",
-    tag: "sentimentbaro",
-  });
-  if (o.order_type === "LIMIT") form.set("price", String(o.price));
-  else form.set("market_protection", "-1");     // exchanges require market protection on API market orders; -1 = automatic
+  let url, init;
+  if (path === "/order") {
+    const o = msg.order;
+    const bad = validOrder(o);
+    if (bad) return ok({ error: bad }, 400);
+    const form = new URLSearchParams({
+      tradingsymbol: o.tradingsymbol, exchange: o.exchange, transaction_type: o.transaction_type,
+      order_type: o.order_type, quantity: String(o.quantity), product: o.product, validity: "DAY",
+      tag: "sentimentbaro",
+    });
+    if (o.order_type === "LIMIT") form.set("price", String(o.price));
+    else form.set("market_protection", "-1");     // exchanges require market protection on API market orders; -1 = automatic
+    url = "https://api.kite.trade/orders/regular"; init = { method: "POST", body: form.toString() };
+  } else {
+    // Scalping page: cancel an open order, or change an open LIMIT order's price (SL chase / exit now).
+    const id = String(msg.order_id || "");
+    if (!/^[0-9]{1,24}$/.test(id)) return ok({ error: "bad order id" }, 400);
+    url = `https://api.kite.trade/orders/regular/${id}`;
+    if (path === "/cancel") init = { method: "DELETE" };
+    else {
+      const price = Number(msg.price);
+      if (!(price > 0 && price < 1e7)) return ok({ error: "bad price" }, 400);
+      init = { method: "PUT", body: new URLSearchParams({ order_type: "LIMIT", price: String(price) }).toString() };
+    }
+  }
 
   let r, d;
   try {
-    r = await fetchImpl("https://api.kite.trade/orders/regular", {
-      method: "POST", body: form.toString(), signal: AbortSignal.timeout(8000),
-      headers: { "X-Kite-Version": "3", Authorization: `token ${k.api_key}:${k.access_token}`, "content-type": "application/x-www-form-urlencoded" },
-    });
+    r = await fetchImpl(url, { ...init, signal: AbortSignal.timeout(8000), headers: kiteHeaders });
     d = await r.json().catch(() => ({}));
   } catch (e) {
     return ok({ error: "Zerodha se jawab nahi aaya (" + (e.name === "TimeoutError" ? "time out" : e.message) + "). Kite app mein orders check kariye." }, 502);
   }
-  if (r.ok && d.status === "success" && d.data?.order_id) return ok({ ok: true, order_id: d.data.order_id });
+  if (r.ok && d.status === "success" && d.data?.order_id) return ok({ ok: true, order_id: String(d.data.order_id) });
   return ok({ error: d.message || `Zerodha answered ${r.status}`, error_type: d.error_type || null }, r.status >= 400 ? r.status : 502);
 }

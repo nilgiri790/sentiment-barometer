@@ -151,6 +151,14 @@ localStorage `sb-bt-strategy`. "AI se poochhiye": quick prompts + textarea -> PO
 candles (last 400), backtest summary, prompt}; answer language/length from Sentiment settings; tiny safe markdown render.
 Tested: 65 unit tests (engine, validation, AI prompt/strategy); browser bt suite 16/16 + all earlier suites pass.
 
+## Claude calls (2026-11-05 fix)
+Live bug: Backtest "Analyze" returned an empty answer. Cause: claude-haiku-5-5 thinks by default and thinking tokens count
+against max_tokens (900) -> the reply had only an empty thinking block (stop_reason max_tokens). All Claude calls now go
+through lib/claude.mjs claudeMessage(): sends thinking {type:"disabled"} (allowed on Haiku 5.5 at its default medium effort;
+also faster), and on a 400 about thinking (Opus 5.5 / Sonnet 5.5 / Fable reject disabling) retries with
+output_config.effort "low" and 4x max_tokens; empty text -> Hinglish error by stop_reason (max_tokens / refusal / empty).
+Used by lib/sentiment.mjs (scoring), lib/scan.mjs (report), lib/aianalyze.mjs (Backtest AI). Tests: test/claude.test.mjs.
+
 ## Seen on the live site (user screenshot, 2026-11-04)
 - Site loads. "Not updated yet" (hourly collect had not run yet). Price search: "Yahoo answered 429" (Yahoo rate-limits
   Netlify's servers). Added a retry on query2.finance.yahoo.com; may still fail -> real fix is the Zerodha price source.
@@ -193,3 +201,22 @@ Show a preview before big changes.
 "code GitHub ko bhejo" (send code to GitHub). Every push to main = one Netlify production deploy = credits.
 Until then keep changes uncommitted in the working tree (a session stop hook nags about unpushed commits; do not push for it).
 When the user asks to send: commit everything in one commit, run `npm test`, push once, then ask them to check Netlify Deploys.
+
+## Scalping page (2026-11-05)
+Sidebar item "Scalping" below Backtest (#/scalp, #view-scalp, lazy public/scalp.mjs; gets {makeAC, suggest, adminPost, adminGet,
+toast, isAdmin}). Option-only search; chart 1s/5s/15s (ticks only) + 1m/5m (/api/candles + ticks); Zerodha WebSocket in
+"full" mode -> bid/ask + 5-level depth (kiteticks parses 184-byte packets) and order updates (text {type:"order"}).
+No WebSocket -> GET /api/admin/ltp every 3 s. Smart order: lots, entry (follows live price until typed), target / SL trigger /
+SL limit kept as point offsets from entry (default +10/-7/-6, saved in localStorage `sb-scalp-form`), chase seconds (3..600,
+default 30), MIS/NRML, one-click toggle (OFF by default -> confirm box). Engine public/scalpengine.mjs (pure, unit tested):
+BUY LIMIT -> on fill SELL LIMIT target -> price <= trigger once -> cancel target, wait for CANCELLED, then SELL LIMIT at SL limit
+-> not filled in chaseSec -> MODIFY that SL order to the current price (tick floor), repeated every chaseSec. Only one SELL open
+at a time. Handles partial fills, refused cancel (retry 3 s), target filled before cancel, rejects; Exit now; Managing band.
+RUNS IN THE BROWSER: page closed = target stays on Zerodha, SL/chase stop. Bracket saved in localStorage `sb-scalp` and
+resumed on reload (forgotten after 18 h); order status polled via GET /api/admin/order-status?id= (2 s, 4 s when WS live).
+Server: POST /api/admin/order-change {op:"cancel"|"modify", order_id, price} (lib/orders.mjs changeOrder: reads the order from
+Kite first; must be open; modify only SELL LIMIT) -> relay POST /cancel (DELETE /orders/regular/{id}) or /modify (PUT, LIMIT price).
+Option SELL also refused if held qty minus pending SELL orders < qty (no writing, no double sells); option SELL skips the 3 s
+lock and the value limit (it only closes). THE DEPLOYED RELAY MUST BE UPDATED (Cloud Shell: git pull && bash relay/setup.sh),
+otherwise cancel/modify get "Relay purana hai". Tested: 88 unit tests; browser scalp suite 26/26 (fake Kite WS with price
+control + stateful fake order book in the stand-in server) + all earlier suites pass. NOT tested against real Kite.
