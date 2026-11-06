@@ -9,6 +9,7 @@
 import { contractGreeks, indicatorSummary, resample, compact } from "./optanalytics.mjs";
 import { IST } from "./kiteticks.mjs";
 import { optName } from "./scalpchain.mjs";
+import { confluence, scoreFor } from "./scalpscore.mjs";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const f2 = (v) => (v == null || !Number.isFinite(+v) ? "–" : (+v).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
@@ -30,7 +31,7 @@ const MODES = { off: "Band", signal: "Signal", trade: "Auto trade" };
 // api: {H, market, state(), applyPick(sig), autoTrade(result) -> {ok, msg, stop}, tradeMode() -> "paper"|"real", today() -> {trades, net}}
 export function mountAI(el, api) {
   const H = api.H, M = api.market;
-  let usage = null, auto = { lots: 1, maxTrades: 5, maxLoss: 1000, minConf: 65 }, busy = false, last = null, scanBase = null, scanAt = 0;
+  let usage = null, auto = { lots: 1, maxTrades: 5, maxLoss: 1000, minConf: 65, minScore: 0 }, busy = false, last = null, scanBase = null, scanAt = 0;
   let mode = "off", timer = null, nextAt = 0, fails = 0, every = 60, showSet = false, draft = {}, lastScanAt = 0, prevSpot = null;
   const pending = new Map();                                 // AI signals being checked on the live price (report card)
   setInterval(checkSignals, 1000);
@@ -62,7 +63,7 @@ export function mountAI(el, api) {
       <div class="ai-status ${mode !== "off" ? "on" : ""} ${mode === "trade" ? "ai-st-trade" : ""}" id="ainext">${statusTxt()}</div>
       ${showSet ? settingsHtml() : ""}
       <div id="aires">${last ? resultHtml(last) : `<div class="note" style="margin:0">Abhi koi signal nahi. "Abhi scan karo" dabaiye ya mode chuniye.</div>`}</div>
-      ${history.length ? `<details class="ai-histd"><summary>Pichhle signals (${history.length})</summary><div class="ai-hist tnum">${history.slice(0, 10).map((h) => `<div><time>${hhmm(h.at)}</time><b class="${h.signal === "WAIT" ? "" : h.signal === "BUY_CE" ? "up" : "down"}">${h.signal.replace("_", " ")}</b><span>${esc(h.name || "")}</span>${h.entry ? `<span>@ ${f2(h.entry)}</span>` : ""}<span class="note" style="margin:0">${h.confidence}%${h.act ? " · " + esc(h.act) : ""}</span></div>`).join("")}</div></details>` : ""}`;
+      ${history.length ? `<details class="ai-histd"><summary>Pichhle signals (${history.length})</summary><div class="ai-hist tnum">${history.slice(0, 10).map((h) => `<div><time>${hhmm(h.at)}</time><b class="${h.signal === "WAIT" ? "" : h.signal === "BUY_CE" ? "up" : "down"}">${h.signal.replace("_", " ")}</b><span>${esc(h.name || "")}</span>${h.entry ? `<span>@ ${f2(h.entry)}</span>` : ""}<span class="note" style="margin:0">${h.confidence}%${h.score != null ? ` · score ${h.score}/${h.scoreN}` : ""}${h.act ? " · " + esc(h.act) : ""}</span></div>`).join("")}</div></details>` : ""}`;
     const q = (id) => box.querySelector("#" + id);
     q("aigo").onclick = () => scan("manual");
     q("aimodes").onclick = (e) => { const b = e.target.closest("button"); if (b && b.dataset.m !== mode) setMode(b.dataset.m); };
@@ -84,6 +85,7 @@ export function mountAI(el, api) {
       <label><span>Din mein max trade</span><input class="field" id="a-maxTrades" type="number" min="1" max="50" value="${v("maxTrades")}"></label>
       <label><span>Din ka max nuksan ₹</span><input class="field" id="a-maxLoss" type="number" min="100" step="100" value="${v("maxLoss")}"></label>
       <label><span>Kam se kam bharosa %</span><input class="field" id="a-minConf" type="number" min="30" max="95" value="${v("minConf")}"></label>
+      <label><span>Kam se kam score (0 = band)</span><input class="field" id="a-minScore" type="number" min="0" max="7" value="${v("minScore")}"></label>
       <label class="wide"><span>AI se kuch khaas kehna (optional)</span><textarea class="field ai-q" id="aiq" rows="2" maxlength="400" placeholder="jaise: 'Sirf PE side dekho' ya 'expiry ke din saavdhaan'">${esc(draft.q || "")}</textarea></label>
       <div class="wide ai-setb"><button type="button" class="btn sm" id="aisave">Save</button><span class="note" style="margin:0">Limit poori ya nuksan hone par AI apne aap ruk jaata hai.</span></div>
     </div>`;
@@ -91,14 +93,14 @@ export function mountAI(el, api) {
   function wireSettings(box) {
     const q = (id) => box.querySelector("#" + id);
     q("aievery").onchange = (e) => { every = +e.target.value; try { localStorage.setItem(HKEY + "-every", String(every)); } catch {} if (mode !== "off" && !busy) go((every * 1000) / SPEED); };
-    ["ailim", "a-lots", "a-maxTrades", "a-maxLoss", "a-minConf"].forEach((id) => (q(id).oninput = (e) => (draft[id === "ailim" ? "limit" : id.slice(2)] = e.target.value)));
+    ["ailim", "a-lots", "a-maxTrades", "a-maxLoss", "a-minConf", "a-minScore"].forEach((id) => (q(id).oninput = (e) => (draft[id === "ailim" ? "limit" : id.slice(2)] = e.target.value)));
     q("aiq").oninput = (e) => (draft.q = e.target.value);
     q("aisave").onclick = async () => {
       try {
         useSeq++;
-        const [a, b] = await Promise.all([H.adminPost("ai-limit", { limit: +q("ailim").value }), H.adminPost("ai-auto", { auto: { lots: +q("a-lots").value, maxTrades: +q("a-maxTrades").value, maxLoss: +q("a-maxLoss").value, minConf: +q("a-minConf").value } })]);
+        const [a, b] = await Promise.all([H.adminPost("ai-limit", { limit: +q("ailim").value }), H.adminPost("ai-auto", { auto: { lots: +q("a-lots").value, maxTrades: +q("a-maxTrades").value, maxLoss: +q("a-maxLoss").value, minConf: +q("a-minConf").value, minScore: +q("a-minScore").value } })]);
         useSeq++; usage = a.usage; auto = b.auto; const keepQ = draft.q; draft = { q: keepQ };
-        H.toast(`Save ho gaya: roz ${usage.limit} AI call · ${auto.lots} lot · max ${auto.maxTrades} trade · max nuksan ₹${auto.maxLoss} · ${auto.minConf}%+ bharosa.`); draw();
+        H.toast(`Save ho gaya: roz ${usage.limit} AI call · ${auto.lots} lot · max ${auto.maxTrades} trade · max nuksan ₹${auto.maxLoss} · ${auto.minConf}%+ bharosa${auto.minScore ? ` · score ${auto.minScore}+` : ""}.`); draw();
       } catch (e) { H.toast(e.message); }
     };
   }
@@ -124,7 +126,7 @@ export function mountAI(el, api) {
       const real = api.tradeMode() === "real";
       const msg = `AI ab KHUD trade karega (${real ? "ASLI PAISE SE, asli orders" : "Paper: nakli paise, koi asli order nahi"}).\n\n` +
         `• Har trade: ${auto.lots} lot, BUY + target + stop-loss\n• Din mein max ${auto.maxTrades} trade\n• Din ka nuksan ₹${auto.maxLoss} hote hi AI ruk jaayega\n` +
-        `• Sirf ${auto.minConf}% ya zyada bharose wale signal par\n• Ek waqt mein ek hi trade · 3:00 baje ke baad naya trade nahi\n• Ye page khula rakhiye, band hua to AI ruk jaayega\n\n` +
+        `• Sirf ${auto.minConf}% ya zyada bharose wale signal par${auto.minScore ? ` (aur score ${auto.minScore}+)` : ""}\n• Ek waqt mein ek hi trade · 3:00 baje ke baad naya trade nahi\n• Ye page khula rakhiye, band hua to AI ruk jaayega\n\n` +
         `${real ? "AI galat bhi ho sakta hai aur asli nuksan ho sakta hai. " : ""}Shuru karein?`;
       if (!confirm(msg)) return draw();
     }
@@ -157,7 +159,8 @@ export function mountAI(el, api) {
   function track(r, taken) {
     if (r.signal === "WAIT" || !r.entry || !r.symbol) return;
     pending.set(r.at + r.symbol, { id: `${Date.parse(r.at)}-${r.symbol}`, at: r.at, index: M.idx.key, symbol: r.symbol, name: r.name, type: r.signal === "BUY_PE" ? "PE" : "CE",
-      confidence: r.confidence, entry: r.entry, target: r.target, stopLoss: r.stopLoss, until: Date.parse(r.at) + Math.max(5, r.validMinutes || 10) * 60000, hi: r.entry, lo: r.entry, taken });
+      confidence: r.confidence, entry: r.entry, target: r.target, stopLoss: r.stopLoss, until: Date.parse(r.at) + Math.max(5, r.validMinutes || 10) * 60000, hi: r.entry, lo: r.entry, taken,
+      score: r.score?.agree ?? null, scoreN: r.score?.n ?? null });
   }
   function checkSignals() {
     if (!pending.size || !M.chain) return;
@@ -208,10 +211,10 @@ export function mountAI(el, api) {
     busy = true; draw();
     let ok = false;
     try {
-      const p = await payload();
+      const p = await payload(), conf = confluence(p);       // our own rule score from the same data (not sent to the AI)
       const d = await H.adminPost("ai", { mode: "trade", payload: p, question: draft.q || "" });
       if (d.usage) { useSeq++; usage = d.usage; }
-      last = { ...d.result, name: nameFor(d.result.symbol), fresh: kind !== "manual", act: null };
+      last = { ...d.result, name: nameFor(d.result.symbol), fresh: kind !== "manual", act: null, conf, score: scoreFor(conf, d.result.signal) };
       scanBase = M.snapshot(); scanAt = Date.now(); lastScanAt = Date.now(); prevSpot = M.under.spot; ok = true; api.onPlan?.();
       const prev = history[0], name = last.signal === "WAIT" ? M.idx.label : last.name;
       busy = false; draw();                                   // show the answer at once, then act on it
@@ -226,7 +229,7 @@ export function mountAI(el, api) {
       if (kind === "manual" && last.signal !== "WAIT" && last.entry) {   // button: open that strike + fill the form (no order)
         if (await api.applyPick(pickOf(last))) H.toast(`AI ne ${last.name} chuna: strike khul gaya aur form bhar diya. Check karke BUY dabaiye.`);
       }
-      history.unshift({ at: Date.now(), signal: last.signal, name, entry: last.entry, confidence: last.confidence, act: kind === "trade" ? (last.acted ? "AI trade" : "") : kind === "signal" ? "signal" : "" });
+      history.unshift({ at: Date.now(), signal: last.signal, name, entry: last.entry, confidence: last.confidence, score: last.score?.agree ?? null, scoreN: last.score?.n ?? null, act: kind === "trade" ? (last.acted ? "AI trade" : "") : kind === "signal" ? "signal" : "" });
       history = history.slice(0, 20); try { localStorage.setItem(HKEY, JSON.stringify(history)); } catch {}
       M.draw();                                               // mark the AI's strike in the chain
     } catch (e) {
@@ -241,18 +244,32 @@ export function mountAI(el, api) {
     for (const r of M.chain?.rows || []) for (const [c, t] of [[r.ce, "CE"], [r.pe, "PE"]]) if (c?.symbol === sym) return optName(M.idx.key, M.chain.expiry, r.strike, t);
     return api.state().target?.symbol === sym ? api.state().target.name : sym.replace(/\.NFO$/, "");
   }
+  function scorePill(r) {
+    const c = r.conf; if (!c?.n) return "";
+    if (r.score?.agree == null) return `<span class="ai-pill aisc" title="Hamara score: kitni cheezein CE (upar) / PE (neeche) ki taraf">CE ${c.bull} · PE ${c.bear} /${c.n}</span>`;
+    const q = r.score.agree / r.score.n;
+    return `<span class="ai-pill aisc ${q >= 0.7 ? "hi" : q < 0.5 ? "lo" : ""}" title="Hamara score: ${r.score.n} mein se ${r.score.agree} cheezein is signal ke saath">Score ${r.score.agree}/${r.score.n}</span>`;
+  }
+  function scoreHtml(r) {
+    const c = r.conf; if (!c?.n) return "";
+    const want = r.score?.side || 0, mark = (s) => (s === 0 ? "–" : want ? (s === want ? "✓" : "✗") : s > 0 ? "▲" : "▼");
+    return `<details class="ai-why ai-score"><summary>Score ka hisaab (code se, AI se alag)</summary><ul class="sc-list">${c.items.map((x) =>
+      `<li class="${x.side === 0 ? "" : want ? (x.side === want ? "up" : "down") : x.side > 0 ? "up" : "down"}"><b>${mark(x.side)}</b> ${esc(x.label)}: ${esc(x.txt)}</li>`).join("")}</ul>
+      <div class="note">${want ? `${c.n} mein se ${r.score.agree} cheezein ${want > 0 ? "CE (upar)" : "PE (neeche)"} ki taraf.` : `${c.bull} upar, ${c.bear} neeche, baaki beech mein.`} Ye score AI ko nahi bheja jaata, taaki report card mein dono ki tulna saaf ho.</div></details>`;
+  }
   function resultHtml(r) {
     const tone = r.signal === "BUY_CE" ? "up" : r.signal === "BUY_PE" ? "down" : "wait";
     const rr = r.entry && r.target && r.stopLoss ? ((r.target - r.entry) / (r.entry - r.stopLoss)).toFixed(1) : null;
     const open = r.symbol && api.state().target?.symbol === r.symbol;
     return `<div class="ai-res ${tone}${r.fresh ? " fresh" : ""}">
       <div class="ai-top"><span class="ai-sig">${r.signal === "WAIT" ? "WAIT" : r.signal.replace("_", " ")}</span>${r.symbol ? `<b class="ai-strike">${esc(r.name)}</b>` : `<span class="note" style="margin:0">abhi trade nahi</span>`}
-        <span class="ai-pill" title="AI ka bharosa">${r.confidence}%</span><span class="note" style="margin:0">${hhmm(Date.parse(r.at))} · ${hhmm(Date.parse(r.at) + r.validMinutes * 60000)} tak</span></div>
+        <span class="ai-pill" title="AI ka bharosa (AI ka apna andaaza)">AI ${r.confidence}%</span>${scorePill(r)}<span class="note" style="margin:0">${hhmm(Date.parse(r.at))} · ${hhmm(Date.parse(r.at) + r.validMinutes * 60000)} tak</span></div>
       ${r.summary ? `<p>${esc(r.summary)}</p>` : ""}
       ${r.note ? `<div class="kres bad">${esc(r.note)}</div>` : ""}
       ${r.entry ? `<div class="ai-nums tnum"><span>Entry <b>${f2(r.entry)}</b></span><span>Target <b class="up">${f2(r.target)}</b></span><span>SL <b class="down">${f2(r.stopLoss)}</b></span>${rr ? `<span>R:R <b>${rr}</b></span>` : ""}</div>` : ""}
       ${r.plan ? `<div class="ai-plan tnum">🧭 Plan: <b class="up">${r.plan.above.toLocaleString("en-IN")} ke upar CE</b> · <b class="down">${r.plan.below.toLocaleString("en-IN")} ke neeche PE</b> · beech mein no-trade${r.plan.note ? ` · ${esc(r.plan.note)}` : ""}</div>` : ""}
       ${r.act ? `<div class="ai-act ${r.acted ? "ok" : ""}">${r.acted ? "🤖 " : "⏸ "}${esc(r.act)}</div>` : ""}
+      ${scoreHtml(r)}
       ${r.reasons.length || r.risks.length ? `<details class="ai-why"><summary>Kyon? (${r.reasons.length} kaaran${r.risks.length ? `, ${r.risks.length} risk` : ""})</summary>
         <div class="rcols">${r.reasons.length ? `<div><div class="label">Kaaran</div><ul>${r.reasons.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>` : ""}${r.risks.length ? `<div><div class="label">Risk</div><ul>${r.risks.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>` : ""}</div>
         <div class="note">AI ne dekha: ${esc((r.indicatorsUsed || []).join(", ") || "chain, price action")} · news ${r.newsCount ?? 0}${r.learnedFrom ? ` · pichhle ${r.learnedFrom} trade se seekh` : ""}</div></details>` : ""}
@@ -267,6 +284,8 @@ export function mountAI(el, api) {
 }
 
 export const AI_CSS = `
+.ai-pill.aisc{background:var(--surface-2);color:var(--ink)}.ai-pill.aisc.hi{background:color-mix(in srgb,var(--pos) 18%,transparent);color:var(--pos)}.ai-pill.aisc.lo{background:color-mix(in srgb,var(--neg) 16%,transparent);color:var(--neg)}
+.sc-list{list-style:none;margin:6px 0;padding:0;display:grid;gap:3px;font-size:12.5px}.sc-list b{display:inline-block;width:16px}.sc-list li.up b{color:var(--pos)}.sc-list li.down b{color:var(--neg)}
 .ai-use{font-size:11.5px;font-weight:600;color:var(--text-2);background:var(--hover);border-radius:10px;padding:2px 8px}
 .ai-chips{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:6px}
 .ai-chip{border:1px solid var(--line);border-radius:var(--r-sm);padding:6px 8px;background:var(--surface-2);min-width:0}

@@ -172,6 +172,7 @@ async function autoTrade(r) {
   if (t.net <= -A.maxLoss) return { ok: false, msg: `Aaj ka max nuksan ₹${A.maxLoss} pahunch gaya`, stop: true };
   if (t.lastLossAt && Date.now() - t.lastLossAt < 5 * 60000) return { ok: false, msg: "Pichhla AI trade nuksan mein tha: 5 min ruk rahe hain" };
   if (r.confidence < A.minConf) return { ok: false, msg: `Bharosa ${r.confidence}% hai, aapki shart ${A.minConf}%+: trade nahi kiya` };
+  if (A.minScore && !(r.score?.agree >= A.minScore)) return { ok: false, msg: `Score ${r.score?.agree ?? "–"}/${r.score?.n ?? "–"} hai, aapki shart ${A.minScore}+: trade nahi kiya` };
   if (TMODE === "real") { const w = why(); if (w) return { ok: false, msg: w.replace(/<[^>]+>/g, ""), stop: true }; }
   const okPick = await applyPick({ symbol: r.symbol, name: r.name, lot: market.chain?.lot_size, entry: r.entry, target: r.target, stopLoss: r.stopLoss });
   if (!okPick) return { ok: false, msg: "Strike nahi khula" };
@@ -566,7 +567,7 @@ function orderPanel() {
       <div id="spconfirm"></div>
       <button class="btn btn-buy sp-go" id="spgo" ${block ? "disabled" : ""}>BUY + Target / SL <small class="sp-gm">${TMODE === "real" ? "ASLI ORDER" : "PAPER"}</small></button>
       <div class="kres bad" id="sperr" hidden></div>
-      <div class="sp-warn"><b>Dhyan dijiye:</b> Target Zerodha par laga rehta hai, lekin <b>SL trigger aur ${F.chase}s chase is page se chalte hain</b>. Trade ke dauraan ye tab khula rakhiye aur internet chalu rakhiye.</div>
+      <div class="sp-warn"><b>Dhyan dijiye:</b> ${F.hardSl ? `SL Zerodha par rahega, lekin <b>target, breakeven / trailing, time exit aur auto exit is page se chalte hain</b>.` : `Target Zerodha par laga rehta hai, lekin <b>SL trigger aur ${F.chase}s chase is page se chalte hain</b>.`} Trade ke dauraan ye tab khula rakhiye aur internet chalu rakhiye.</div>
     </div>`;
   const $ = (id) => box.querySelector("#" + id);
   const val = (id) => { const v = parseFloat($(id).value); return Number.isFinite(v) ? v : null; };

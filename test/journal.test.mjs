@@ -53,7 +53,7 @@ test("memory for the AI: stats + lessons from losses go into the trade prompt", 
 
 test("auto guard for REAL AI orders: trade count, lots, daily loss", async () => {
   const s = mem();
-  assert.deepEqual(await getAuto(s), { lots: 1, maxTrades: 5, maxLoss: 1000, minConf: 65 });
+  assert.deepEqual(await getAuto(s), { lots: 1, maxTrades: 5, maxLoss: 1000, minConf: 65, minScore: 0 });
   await saveAuto(s, { maxTrades: 2, maxLoss: 200, lots: 2, minConf: 10 });
   assert.equal((await getAuto(s)).minConf, 65, "bad value -> default kept");
   assert.equal(await autoGuard(s, { lots: 1 }, NOW), null);

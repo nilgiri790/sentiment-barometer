@@ -292,7 +292,7 @@ inside the limits below; Paper is the default.)
   endpoints); browser scalp suite 77/77 (Paper auto trade end-to-end on fake ticks, AI review, summary tab, lessons in the
   next prompt, limits) + all earlier suites pass. NOT tested with real money / real Kite.
 
-## Pro trader features (2026-11-06, NOT pushed until the user says so)
+## Pro trader features (2026-11-06, pushed in 07b5ef0)
 User asked to build every feature from my "brilliant options trader" list. Built:
 - Zerodha-side SL (default "SL kahan: Zerodha par"): after the entry fills, the engine (public/scalpengine.mjs `hardSl`) places a
   SELL SL order on Zerodha (trigger = SL trigger, limit = trigger - 3 % `hardLimit`); the target stays virtual (page watches it and,
@@ -324,3 +324,15 @@ User asked to build every feature from my "brilliant options trader" list. Built
 - NOT built: partial booking (would need two SELL orders at once; the one-SELL safety rule stays).
 Tested: 126 unit tests; browser scalp suite 95/95 (Zerodha SL Asli bracket on the fake order book, kill switch, panic, revenge,
 context bar, report card, weekly review) + all earlier suites pass. NOT tested with real Kite / real money.
+
+## Rule score next to the AI confidence (2026-11-06)
+User asked how "bharosa %" is decided (answer: the AI's own estimate, no formula) and asked for our own score to compare.
+public/scalpscore.mjs confluence(payload) (pure, unit tested): up to 7 factors vote +1 / -1 / 0 from the SAME payload the AI gets:
+1m trend (EMA 9 vs 21), 5m trend, RSI 1m (>=55 / <=45), Future vs its VWAP (index has no volume), PCR (>=1 / <=0.8),
+OI change ATM ±5 (PE OI added more = up, CE = down, within 10 % = 0), heavyweights majority. scoreFor(c, signal) -> {agree, n}.
+The score is NOT sent to the AI (fair comparison). AI card: "AI 72%" + "Score 4/7" pill (green >=70 %, red <50 %) + "Score ka hisaab"
+list; WAIT shows "CE x · PE y /n". Signals carry score / scoreN (lib/journal.mjs addSignal); signalStats adds scHi (>=70 %),
+scMid (50-69 %), scLo, both (AI 70%+ and score 70%+) -> rows in the AI report card. signalMemory unchanged (no score to the AI).
+Auto trade setting minScore (0..7, 0 = off, Blobs admin `ai-auto`); scalp.mjs autoTrade refuses below it (page-side only).
+Form warning now matches the SL type (Zerodha SL vs page SL). CSS class `.sc` is taken globally (tiles): pill uses `aisc`.
+Tested: 129 unit tests; scalp suite 97/97 + all suites pass.
