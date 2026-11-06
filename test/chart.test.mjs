@@ -21,7 +21,7 @@ test("parse Kite ticks: quote, index, ltp, heartbeat", () => {
     { len: 8, ints: [111, 9905] },                                                            // ltp mode
   ]);
   const t = parseTicks(msg);
-  assert.deepEqual(t[0], { token: 408065, ltp: 418.35, volume: 123456, open: 410, high: 420, low: 405, close: 411.2, buyQty: 0, sellQty: 0 });
+  assert.deepEqual(t[0], { token: 408065, ltp: 418.35, volume: 123456, open: 410, high: 420, low: 405, close: 411.2, buyQty: 0, sellQty: 0, avg: 418 });
   assert.deepEqual(t[1], { token: 260105, ltp: 52140, index: true, high: 52300, low: 51900, open: 52000, close: 51800 });
   assert.deepEqual(t[2], { token: 111, ltp: 99.05 });
   assert.deepEqual(parseTicks(new ArrayBuffer(1)), [], "heartbeat");

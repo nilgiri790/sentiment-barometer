@@ -60,3 +60,19 @@ test("result for a partly filled target + SL rest, exit now, and stats", () => {
   assert.deepEqual(s.byType.CE, { n: 2, wins: 1, net: 150 }); assert.deepEqual(s.byConf["70+"], { n: 1, wins: 1, net: 200 });
   assert.equal(s.best, 200); assert.equal(s.worst, -100);
 });
+
+test("pro stats: equity curve, drawdown, expectancy, R, time slots, setup / mood / expiry groups", async () => {
+  const { proStats } = await import("../public/tradestats.mjs");
+  const at = (hm) => `2026-11-06T${hm}:00+05:30`;
+  const s = proStats([
+    { at: at("09:20"), net: 300, r: 1.2, type: "CE", setup: "breakout", mood: "planned", slip: 0.1 },
+    { at: at("11:00"), net: -200, r: -0.8, type: "PE", setup: "reversal", mood: "fomo", expiryDay: true, slip: 0.3 },
+    { at: at("14:00"), net: -150, r: -0.6, type: "CE", setup: "breakout", mood: "revenge", hardSl: true },
+    { at: at("10:30"), net: 400, r: 1.6, type: "CE", setup: "breakout", mood: "planned" },
+  ]);
+  assert.deepEqual(s.curve.map((c) => c[1]), [300, 700, 500, 350], "sorted by time: 09:20, 10:30, 11:00, 14:00");
+  assert.equal(s.maxDD, 350); assert.equal(s.expectancy, 87.5); assert.equal(s.avgR, 0.35); assert.equal(s.avgSlip, 0.2);
+  assert.deepEqual(s.bySlot["9:15–10:00"], { n: 1, wins: 1, net: 300 }); assert.equal(s.bySlot["1:30–3:30"].net, -150);
+  assert.deepEqual(s.bySetup.breakout, { n: 3, wins: 2, net: 550 }); assert.equal(s.byMood.revenge.net, -150);
+  assert.equal(s.byExpiry["Expiry din"].n, 1); assert.equal(s.bySl["Zerodha SL"].n, 1);
+});

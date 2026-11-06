@@ -291,3 +291,36 @@ inside the limits below; Paper is the default.)
 - Tested: 110 unit tests (paper broker + engine, trade result / stats, journal clean / review / memory / guard, admin
   endpoints); browser scalp suite 77/77 (Paper auto trade end-to-end on fake ticks, AI review, summary tab, lessons in the
   next prompt, limits) + all earlier suites pass. NOT tested with real money / real Kite.
+
+## Pro trader features (2026-11-06, NOT pushed until the user says so)
+User asked to build every feature from my "brilliant options trader" list. Built:
+- Zerodha-side SL (default "SL kahan: Zerodha par"): after the entry fills, the engine (public/scalpengine.mjs `hardSl`) places a
+  SELL SL order on Zerodha (trigger = SL trigger, limit = trigger - 3 % `hardLimit`); the target stays virtual (page watches it and,
+  when hit, modifies the SL order to a LIMIT at the price). Page closed = SL still on Zerodha. Fallback to the page SL if placeSL
+  is missing / refused (row shows a warning). Price already below the stop at fill -> sells at once (exitWhy "slnow").
+  Breakeven (`beAt` pts -> SL = entry), trailing SL (`trailBy` pts, max one Zerodha modify per 3 s), time exit (`maxHoldSec`).
+  Relay (relay/relay.mjs) accepts order_type SL + trigger_price, modify with trigger_price (keeps SL) or price only (-> LIMIT).
+  lib/orders.mjs changeOrder: TRIGGER PENDING SL only takes a trigger move; triggered SL a price change. Paper broker has SL too.
+  THE DEPLOYED RELAY MUST BE UPDATED again (Cloud Shell: git pull && bash relay/setup.sh); until then real trades fall back to page SL.
+- Risk cockpit public/scalprisk.mjs + lib/risk.mjs (Blobs admin `risk`; GET/POST /api/admin/risk): risk per trade ₹, max loss
+  per day, max consecutive losses, max trades per day, spread guard %, checklist on/off, auto square-off time (default 15:15).
+  Kill switch: BUY disabled with the reason; for REAL scalp BUYs (`scalp:true`) the server checks riskGuard too (429).
+  Lot mode "Risk se" = biggest lots whose SL loss fits risk per trade. 🚨 PANIC = cancel entry + exit now. Revenge detection
+  (new trade within 2 min of a loss -> confirm, mood "revenge"). Setup / mood tags, 3-item checklist (manual trades only).
+  The 3 s double-click lock is skipped for scalp BUYs.
+- Context bar public/scalpctx.mjs + lib/context.mjs (GET /api/context?u=, one /quote + day candles): India VIX, near future
+  (premium, VWAP from WS avg price, OI change since page open), heavyweights (approx fixed lists in HEAVYWEIGHTS), day type
+  (opening range + VWAP), expected move (ATM straddle), yesterday H/L/C + CPR / pivots, events (📅 editor, GET/POST
+  /api/admin/events, user maintained; "Aaj expiry" automatic). Index chart lines: OI levels / price levels (toggles) + AI plan.
+  NFO cache key now `kite-nfo-v2` (also futures). kiteticks.mjs reads avg price (offset 12).
+- AI: returns a plan {above, below, note} too; Smart interval (EVERY 0) = scan again only when the index crosses a plan level
+  (min 60 s gap, else every 10 min). AI report card: each signal tracked on live chain prices (target first / SL first / none),
+  POST /api/admin/signals (Blobs admin `signals`, last 500) and fed back into the prompt (signalMemory). Prompt gets `market` context.
+  autoTrade waits up to 3 s for a live tick, re-anchors entry / target / SL to the live price when >0.5 % off, skips if price <= SL.
+- Journal pro stats (tradestats.mjs proStats): equity curve SVG, max drawdown, expectancy, avg R, slippage, groups by time slot,
+  CE/PE, expiry day, setup, mood, SL type, AI vs you. Weekly AI review (1 Haiku call, POST /api/admin/journal {op:"week-review"},
+  Blobs admin `week-review`).
+- Hotkeys Shift+C (ATM CE) / Shift+P (ATM PE) / Shift+B (BUY) / Shift+X (Exit); quick ITM / ATM / OTM buttons.
+- NOT built: partial booking (would need two SELL orders at once; the one-SELL safety rule stays).
+Tested: 126 unit tests; browser scalp suite 95/95 (Zerodha SL Asli bracket on the fake order book, kill switch, panic, revenge,
+context bar, report card, weekly review) + all earlier suites pass. NOT tested with real Kite / real money.

@@ -108,9 +108,9 @@ test("partial entry then cancelled -> protects the filled part", async () => {
   await b.onTick(92.9);                                           // falling while entry is half filled
   assert.deepEqual(calls[1], ["cancel", "O1"]);
   await b.onOrder({ order_id: "O1", status: "CANCELLED", filled_quantity: 2 });
-  assert.deepEqual(calls[2], ["place", { side: "SELL", price: 110, qty: 2 }]);
-  // last price is still below trigger -> protect() checks it at once: target cancel starts
-  assert.equal(b.state, "sl_armed"); assert.deepEqual(calls[3], ["cancel", "O2"]);
+  // price is already below the trigger: no target, the filled 2 are sold at the current price straight away
+  assert.deepEqual(calls[2], ["place", { side: "SELL", price: 92.9, qty: 2 }]);
+  assert.equal(b.state, "sl_open"); assert.equal(calls.length, 3);
 });
 
 test("entry rejected / cancelled with nothing filled -> done, nothing else sent", async () => {

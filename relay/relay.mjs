@@ -15,11 +15,16 @@ export function validOrder(o) {
   if (!["NSE", "BSE", "NFO"].includes(o.exchange)) return "exchange must be NSE, BSE or NFO";
   if (!/^[A-Z0-9&\-_.]{1,40}$/.test(o.tradingsymbol || "")) return "bad symbol";
   if (!["BUY", "SELL"].includes(o.transaction_type)) return "side must be BUY or SELL";
-  if (!["MARKET", "LIMIT"].includes(o.order_type)) return "order type must be MARKET or LIMIT";
+  if (!["MARKET", "LIMIT", "SL"].includes(o.order_type)) return "order type must be MARKET, LIMIT or SL";
   if (o.exchange === "NFO" ? !["NRML", "MIS"].includes(o.product) : !["CNC", "MIS"].includes(o.product))
     return o.exchange === "NFO" ? "options product must be NRML or MIS" : "product must be CNC or MIS";
   if (!Number.isInteger(o.quantity) || o.quantity < 1 || o.quantity > 100000) return "bad quantity";
-  if (o.order_type === "LIMIT" && !(Number(o.price) > 0)) return "limit price missing";
+  if ((o.order_type === "LIMIT" || o.order_type === "SL") && !(Number(o.price) > 0)) return "limit price missing";
+  if (o.order_type === "SL") {                       // stop-loss limit: waits on the exchange until the trigger price trades
+    const p = Number(o.price), t = Number(o.trigger_price);
+    if (!(t > 0)) return "trigger price missing";
+    if (o.transaction_type === "SELL" ? p > t : p < t) return "SL limit must be beyond the trigger (sell: limit <= trigger)";
+  }
   return null;
 }
 
@@ -54,8 +59,9 @@ export async function handleRelay({ method, path, body = "", headers = {} }, { s
       order_type: o.order_type, quantity: String(o.quantity), product: o.product, validity: "DAY",
       tag: "sentimentbaro",
     });
-    if (o.order_type === "LIMIT") form.set("price", String(o.price));
-    else form.set("market_protection", "-1");     // exchanges require market protection on API market orders; -1 = automatic
+    if (o.order_type === "LIMIT" || o.order_type === "SL") form.set("price", String(o.price));
+    else form.set("market_protection", "-1");
+    if (o.order_type === "SL") form.set("trigger_price", String(o.trigger_price));     // exchanges require market protection on API market orders; -1 = automatic
     url = "https://api.kite.trade/orders/regular"; init = { method: "POST", body: form.toString() };
   } else {
     // Scalping page: cancel an open order, or change an open LIMIT order's price (SL chase / exit now).
@@ -64,9 +70,11 @@ export async function handleRelay({ method, path, body = "", headers = {} }, { s
     url = `https://api.kite.trade/orders/regular/${id}`;
     if (path === "/cancel") init = { method: "DELETE" };
     else {
-      const price = Number(msg.price);
+      const price = Number(msg.price), trig = msg.trigger_price == null ? null : Number(msg.trigger_price);
       if (!(price > 0 && price < 1e7)) return ok({ error: "bad price" }, 400);
-      init = { method: "PUT", body: new URLSearchParams({ order_type: "LIMIT", price: String(price) }).toString() };
+      if (trig != null && !(trig > 0 && trig < 1e7 && price <= trig)) return ok({ error: "bad trigger price" }, 400);
+      // a stop-loss move (trailing) keeps it an SL order; a price-only change makes it a plain LIMIT (chase / exit)
+      init = { method: "PUT", body: new URLSearchParams(trig != null ? { order_type: "SL", price: String(price), trigger_price: String(trig) } : { order_type: "LIMIT", price: String(price) }).toString() };
     }
   }
 

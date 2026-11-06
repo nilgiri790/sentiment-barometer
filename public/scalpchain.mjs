@@ -76,7 +76,8 @@ export function mountChain(el, chipsEl, api) {
     el.onclick = (e) => {
       const c = e.target.closest("[data-sym]"); if (!c) return;
       const row = chain.rows.find((r) => r.ce?.symbol === c.dataset.sym || r.pe?.symbol === c.dataset.sym), t = row.ce?.symbol === c.dataset.sym ? "CE" : "PE";
-      api.onPick({ symbol: c.dataset.sym, name: optName(idx.key, chain.expiry, row.strike, t), lot_size: chain.lot_size, option: true });
+      const cell = t === "CE" ? row.ce : row.pe;
+      api.onPick({ symbol: c.dataset.sym, name: optName(idx.key, chain.expiry, row.strike, t), lot_size: chain.lot_size, token: cell?.token || null, option: true });
     };
     drawLive();
   }

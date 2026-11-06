@@ -15,10 +15,10 @@ const f2 = (v) => (v == null || !Number.isFinite(+v) ? "–" : (+v).toLocaleStri
 const inr = (v) => (v == null || !Number.isFinite(+v) ? "–" : `${v < 0 ? "−" : v > 0 ? "+" : ""}₹${Math.abs(Math.round(v)).toLocaleString("en-IN")}`);
 const hhmm = (ms) => new Date(ms + IST * 1000).toISOString().slice(11, 16);
 const HKEY = "sb-scalp-ai";
-const EVERY = [30, 60, 120, 300];
+const EVERY = [0, 30, 60, 120, 300];                              // 0 = smart: only when the index breaks the AI's level
 const ANYTIME = location.hostname === "localhost" && /[?&]anytime=1/.test(location.search);      // test hook: ignore market hours
 const SPEED = ANYTIME ? 10 : 1;                                                                     // tests: 30 s -> 3 s
-const everyTxt = (s) => (s < 60 ? `${s} sec` : `${s / 60} min`);
+const everyTxt = (s) => (s === 0 ? "level tootne par (smart)" : s < 60 ? `${s} sec` : `${s / 60} min`);
 // NSE F&O hours: Mon-Fri 9:15 to 15:30 India time (exchange holidays are not known here)
 export function marketOpen(now = Date.now()) {
   if (ANYTIME) return true;
@@ -31,7 +31,9 @@ const MODES = { off: "Band", signal: "Signal", trade: "Auto trade" };
 export function mountAI(el, api) {
   const H = api.H, M = api.market;
   let usage = null, auto = { lots: 1, maxTrades: 5, maxLoss: 1000, minConf: 65 }, busy = false, last = null, scanBase = null, scanAt = 0;
-  let mode = "off", timer = null, nextAt = 0, fails = 0, every = 60, showSet = false, draft = {};
+  let mode = "off", timer = null, nextAt = 0, fails = 0, every = 60, showSet = false, draft = {}, lastScanAt = 0, prevSpot = null;
+  const pending = new Map();                                 // AI signals being checked on the live price (report card)
+  setInterval(checkSignals, 1000);
   try { const e = +localStorage.getItem(HKEY + "-every"); if (EVERY.includes(e)) every = e; } catch {}
   let history = []; try { history = JSON.parse(localStorage.getItem(HKEY) || "[]"); } catch {}
   setInterval(() => { const n = el.querySelector("#ainext"); if (n) n.innerHTML = statusTxt(); }, 1000);
@@ -76,7 +78,7 @@ export function mountAI(el, api) {
   function settingsHtml() {
     const v = (k) => draft[k] ?? auto[k];
     return `<div class="ai-set">
-      <label><span>Kitni der mein dekhe</span><select class="sel" id="aievery">${EVERY.map((x) => `<option value="${x}" ${x === every ? "selected" : ""}>har ${everyTxt(x)}</option>`).join("")}</select></label>
+      <label><span>Kitni der mein dekhe</span><select class="sel" id="aievery">${EVERY.map((x) => `<option value="${x}" ${x === every ? "selected" : ""}>${x === 0 ? "" : "har "}${everyTxt(x)}</option>`).join("")}</select></label>
       <label><span>Roz ki AI call limit</span><input class="field" id="ailim" type="number" min="1" max="2000" value="${draft.limit ?? usage?.limit ?? ""}"></label>
       <label><span>Auto trade: lot</span><input class="field" id="a-lots" type="number" min="1" max="50" value="${v("lots")}"></label>
       <label><span>Din mein max trade</span><input class="field" id="a-maxTrades" type="number" min="1" max="50" value="${v("maxTrades")}"></label>
@@ -105,7 +107,9 @@ export function mountAI(el, api) {
   function useChip() { const u = el.querySelector("#aiuse"); if (u) u.textContent = usage ? `Aaj ${usage.used}/${usage.limit} AI call` : ""; }
   function statusTxt() {
     if (mode === "off") return busy ? "AI dekh raha hai…" : "";
-    const st = api.state(), t = api.today(), when = busy ? "AI dekh raha hai…" : st.bracketLive && mode === "trade" ? "Trade chal raha hai: AI naya trade nahi lega, target / SL sambhal rahe hain" : `agla scan ${Math.max(0, Math.ceil((nextAt - Date.now()) / 1000))}s mein`;
+    const st = api.state(), t = api.today(), P = last?.plan;
+    const when = busy ? "AI dekh raha hai…" : st.bracketLive && mode === "trade" ? "Trade chal raha hai: AI naya trade nahi lega, target / SL sambhal rahe hain"
+      : every === 0 ? (P ? `level ka intezaar: ${P.above} ke upar CE · ${P.below} ke neeche PE` : "pehla scan…") : `agla scan ${Math.max(0, Math.ceil((nextAt - Date.now()) / 1000))}s mein`;
     const tr = mode === "trade" ? ` · aaj ${t.trades}/${auto.maxTrades} trade · P&L <b class="${t.net >= 0 ? "up" : "down"}">${inr(t.net)}</b>` : "";
     return `<b>● ${MODES[mode]}${mode === "trade" ? ` (${api.tradeMode() === "real" ? "ASLI" : "Paper"})` : ""}</b> · ${when}${tr}`;
   }
@@ -135,11 +139,37 @@ export function mountAI(el, api) {
     if (!marketOpen()) return stop("Market band ho gaya: AI band.");
     if (usage && usage.used >= usage.limit) return stop(`Aaj ki AI limit (${usage.limit}) poori: AI band.`);
     if (busy || (mode === "trade" && api.state().bracketLive)) { nextAt = Date.now() + 2000; timer = setTimeout(tick, 2000); return; }   // a trade is running: no new look (saves calls)
+    if (every === 0) {                                       // smart: look again only when the index breaks the AI's level (or after 10 min)
+      const P = last?.plan, spot = M.under.spot, since = Date.now() - lastScanAt;
+      const crossed = P && prevSpot != null && spot != null && ((prevSpot <= P.above && spot > P.above) || (prevSpot >= P.below && spot < P.below));
+      prevSpot = spot;
+      if (P && !(crossed && since > 60000) && since < 10 * 60000) { nextAt = Date.now() + 2000; timer = setTimeout(tick, 2000); return; }
+      if (crossed) H.toast(`📍 Index ne AI ka level ${spot > P.above ? P.above + " upar" : P.below + " neeche"} toda: AI dobara dekh raha hai`);
+    }
     const r = await scan(mode);
     if (mode === "off") return;
     fails = r ? 0 : fails + 1;
     if (fails >= 3) return stop("AI 3 baar lagataar fail hua: AI band. Thodi der baad dobara chalaiye.");
-    go((every * 1000) / SPEED);
+    go(every === 0 ? 2000 : (every * 1000) / SPEED);
+  }
+
+  // ---------- AI report card: did the target or the stop come first on the live price? ----------
+  function track(r, taken) {
+    if (r.signal === "WAIT" || !r.entry || !r.symbol) return;
+    pending.set(r.at + r.symbol, { id: `${Date.parse(r.at)}-${r.symbol}`, at: r.at, index: M.idx.key, symbol: r.symbol, name: r.name, type: r.signal === "BUY_PE" ? "PE" : "CE",
+      confidence: r.confidence, entry: r.entry, target: r.target, stopLoss: r.stopLoss, until: Date.parse(r.at) + Math.max(5, r.validMinutes || 10) * 60000, hi: r.entry, lo: r.entry, taken });
+  }
+  function checkSignals() {
+    if (!pending.size || !M.chain) return;
+    const px = new Map(M.chain.rows.flatMap((r) => [r.ce, r.pe]).filter(Boolean).map((c) => [c.symbol, c.ltp]));
+    for (const [k, x] of pending) {
+      const p = px.get(x.symbol); if (p == null && Date.now() < x.until) continue;
+      if (p != null) { x.hi = Math.max(x.hi, p); x.lo = Math.min(x.lo, p); }
+      const out = p != null && p >= x.target ? "target" : p != null && p <= x.stopLoss ? "sl" : Date.now() >= x.until ? "none" : null;
+      if (!out) continue;
+      pending.delete(k);
+      H.adminPost("signals", { op: "add", signal: { ...x, outcome: out, minutes: Math.round((Date.now() - Date.parse(x.at)) / 60000), mfe: Math.round((x.hi - x.entry) * 100) / 100, mae: Math.round((x.entry - x.lo) * 100) / 100 } }).catch(() => {});
+    }
   }
 
   // ---------- one look ----------
@@ -157,7 +187,7 @@ export function mountAI(el, api) {
     const closeIn = Math.round((Date.parse(new Date(now + IST * 1000).toISOString().slice(0, 10) + "T15:30:00+05:30") - now) / 60000);
     const u5 = resample(ub, 300);
     return {
-      time: hhmm(now) + " IST", minutesToMarketClose: closeIn, tradeMode: mode === "trade" ? `auto (${api.tradeMode()})` : "advice",
+      time: hhmm(now) + " IST", minutesToMarketClose: closeIn, tradeMode: mode === "trade" ? `auto (${api.tradeMode()})` : "advice", market: api.context?.() || null,
       index: { underlying: M.idx.key, name: U.name, spot: U.spot, prevClose: U.prevClose, changePct: U.spot && U.prevClose ? +(((U.spot - U.prevClose) / U.prevClose) * 100).toFixed(2) : null,
         ind1m: indicatorSummary(ub), ind5m: indicatorSummary(u5), last30x1m: compact(ub, 30), last20x5m: compact(u5, 20) },
       chain: { expiry: ch.expiry, lotSize: ch.lot_size, atm: s.atm, pcr: s.pcr, pcrBefore: s.pcrBase, maxPain: s.maxPain, support: s.support, resistance: s.resistance, atmIv: s.atmIv,
@@ -182,17 +212,18 @@ export function mountAI(el, api) {
       const d = await H.adminPost("ai", { mode: "trade", payload: p, question: draft.q || "" });
       if (d.usage) { useSeq++; usage = d.usage; }
       last = { ...d.result, name: nameFor(d.result.symbol), fresh: kind !== "manual", act: null };
-      scanBase = M.snapshot(); scanAt = Date.now(); ok = true;
+      scanBase = M.snapshot(); scanAt = Date.now(); lastScanAt = Date.now(); prevSpot = M.under.spot; ok = true; api.onPlan?.();
       const prev = history[0], name = last.signal === "WAIT" ? M.idx.label : last.name;
       busy = false; draw();                                   // show the answer at once, then act on it
       if (kind === "trade") {
         const res = await api.autoTrade(last);
-        last.act = res.msg; last.acted = !!res.ok;
+        last.act = res.msg; last.acted = !!res.ok; track(last, !!res.ok);
         if (res.ok) H.toast(`🤖 AI ne trade shuru kiya: ${last.name} @ ${f2(last.entry)}`);
         if (res.stop) stop(`AI band: ${res.msg}`);
       } else if (kind === "signal" && last.signal !== "WAIT" && (!prev || prev.signal !== last.signal || prev.name !== name))
         H.toast(`🔔 Naya AI signal: ${last.signal.replace("_", " ")} ${name} @ ${f2(last.entry)}`);
-      else if (kind === "manual" && last.signal !== "WAIT" && last.entry) {   // button: open that strike + fill the form (no order)
+      if (kind !== "trade") track(last, false);
+      if (kind === "manual" && last.signal !== "WAIT" && last.entry) {   // button: open that strike + fill the form (no order)
         if (await api.applyPick(pickOf(last))) H.toast(`AI ne ${last.name} chuna: strike khul gaya aur form bhar diya. Check karke BUY dabaiye.`);
       }
       history.unshift({ at: Date.now(), signal: last.signal, name, entry: last.entry, confidence: last.confidence, act: kind === "trade" ? (last.acted ? "AI trade" : "") : kind === "signal" ? "signal" : "" });
@@ -220,6 +251,7 @@ export function mountAI(el, api) {
       ${r.summary ? `<p>${esc(r.summary)}</p>` : ""}
       ${r.note ? `<div class="kres bad">${esc(r.note)}</div>` : ""}
       ${r.entry ? `<div class="ai-nums tnum"><span>Entry <b>${f2(r.entry)}</b></span><span>Target <b class="up">${f2(r.target)}</b></span><span>SL <b class="down">${f2(r.stopLoss)}</b></span>${rr ? `<span>R:R <b>${rr}</b></span>` : ""}</div>` : ""}
+      ${r.plan ? `<div class="ai-plan tnum">🧭 Plan: <b class="up">${r.plan.above.toLocaleString("en-IN")} ke upar CE</b> · <b class="down">${r.plan.below.toLocaleString("en-IN")} ke neeche PE</b> · beech mein no-trade${r.plan.note ? ` · ${esc(r.plan.note)}` : ""}</div>` : ""}
       ${r.act ? `<div class="ai-act ${r.acted ? "ok" : ""}">${r.acted ? "🤖 " : "⏸ "}${esc(r.act)}</div>` : ""}
       ${r.reasons.length || r.risks.length ? `<details class="ai-why"><summary>Kyon? (${r.reasons.length} kaaran${r.risks.length ? `, ${r.risks.length} risk` : ""})</summary>
         <div class="rcols">${r.reasons.length ? `<div><div class="label">Kaaran</div><ul>${r.reasons.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>` : ""}${r.risks.length ? `<div><div class="label">Risk</div><ul>${r.risks.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>` : ""}</div>
@@ -228,7 +260,7 @@ export function mountAI(el, api) {
       <div class="note" style="margin:0">AI ki salah hai, guarantee nahi. Ye investment advice nahi hai.</div></div>`;
   }
   return {
-    draw, isAuto: () => mode === "trade", mode: () => mode, autoSettings: () => auto, pick: () => (last && last.signal !== "WAIT" ? last.symbol : null),
+    draw, plan: () => last?.plan || null, isAuto: () => mode === "trade", mode: () => mode, autoSettings: () => auto, pick: () => (last && last.signal !== "WAIT" ? last.symbol : null),
     indexChanged: () => { last = null; scanBase = null; if (mode !== "off") stop("Index badla: AI band."); else draw(); },
     stop: (msg) => stop(msg), refresh: () => { if (H.isAdmin() && !usage) loadUsage(); else draw(); }, reloadUsage: loadUsage,
   };
@@ -259,6 +291,7 @@ export const AI_CSS = `
 .ai-sig{font-weight:800;font-size:17px;letter-spacing:.02em}.ai-res.up .ai-sig{color:var(--pos)}.ai-res.down .ai-sig{color:var(--neg)}.ai-res.wait .ai-sig{color:var(--warn-ink)}
 .ai-pill{font-size:12px;font-weight:700;padding:2px 8px;border-radius:10px;background:var(--accent-soft);color:var(--accent)}
 .ai-nums{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--muted)}.ai-nums b{color:var(--ink)}
+.ai-plan{font-size:12.5px;padding:6px 10px;border-radius:var(--r-sm);background:var(--surface-2);border:1px dashed var(--line-2)}
 .ai-act{font-size:12.5px;padding:6px 10px;border-radius:var(--r-sm);background:var(--hover);color:var(--text-2)}.ai-act.ok{background:var(--pos-soft);color:var(--pos);font-weight:600}
 .ai-why summary,.ai-histd summary{cursor:pointer;font-size:12.5px;font-weight:600;color:var(--accent)}
 .ai-why[open] summary{margin-bottom:6px}

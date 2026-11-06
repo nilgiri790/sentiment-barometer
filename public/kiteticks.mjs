@@ -17,7 +17,7 @@ export function parseTicks(buf) {
     if (len === 28 || len === 32) { t.index = true; t.high = v.getInt32(p + 8) / 100; t.low = v.getInt32(p + 12) / 100; t.open = v.getInt32(p + 16) / 100; t.close = v.getInt32(p + 20) / 100; }
     else if (len >= 44) {
       t.volume = v.getInt32(p + 16); t.open = v.getInt32(p + 28) / 100; t.high = v.getInt32(p + 32) / 100; t.low = v.getInt32(p + 36) / 100; t.close = v.getInt32(p + 40) / 100;
-      t.buyQty = v.getInt32(p + 20); t.sellQty = v.getInt32(p + 24);
+      t.buyQty = v.getInt32(p + 20); t.sellQty = v.getInt32(p + 24); t.avg = v.getInt32(p + 12) / 100;   // avg = the day's average traded price (VWAP)
       if (len >= 184) {                                      // full mode: OI + 5 best bids and 5 best asks (12 bytes each)
         t.oi = v.getInt32(p + 48);
         const lvl = (q) => ({ qty: v.getInt32(q), price: v.getInt32(q + 4) / 100, orders: v.getInt16(q + 8) });

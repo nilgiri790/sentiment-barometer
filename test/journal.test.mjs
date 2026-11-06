@@ -81,3 +81,50 @@ test("admin: journal + ai-auto endpoints need login; auto BUY refused over the l
   r = await call("order", "POST", { confirm: true, auto: true, side: "BUY", symbol: "BANKNIFTY26NOV52000CE.NFO", lots: 1 }, ck);
   assert.equal(r.status, 429); assert.match((await r.json()).error, /trade limit \(1\)/);
 });
+
+test("risk rules: kill switch by day loss, losing streak, trade count; server refuses real scalp BUYs", async () => {
+  const { cleanRisk, saveRisk, riskToday, riskGuard, getRisk } = await import("../lib/risk.mjs");
+  assert.equal(cleanRisk({ sqoffAt: "16:00", spreadPct: 99 }).sqoffAt, "15:15"); assert.equal(cleanRisk({ spreadPct: 99 }).spreadPct, 2);
+  const s = mem(); await saveRisk(s, { maxConsecLoss: 2, maxLossDay: 5000 });
+  const now = Date.now(), at = new Date(now - 600e3).toISOString();
+  for (const id of ["a", "b"]) await addTrade({ trade: { ...T, id, mode: "real", at, closedAt: at, riskAmt: 250, plannedEntry: 99.5 } }, { adminStore: s, apiKey: "", now });
+  const j = await getJournal(s);
+  assert.equal(j[0].r, Math.round((j[0].net / 250) * 100) / 100, "R-multiple"); assert.equal(j[0].slip, 0.5, "paid 0.50 more than planned");
+  const t = riskToday(j, "real", await getRisk(s), now);
+  assert.equal(t.consec, 2); assert.match(t.locked, /Lagataar 2/);
+  assert.match(await riskGuard(s, now), /Kill switch/);
+  assert.equal(riskToday(j, "paper", await getRisk(s), now).locked, null, "paper and real are counted apart");
+  await saveRisk(s, { maxConsecLoss: 5, maxLossDay: 300 });
+  assert.match(riskToday(j, "real", await getRisk(s), now).locked, /max nuksan ₹300/);
+});
+
+test("AI report card: signals saved once, stats by confidence / type, memory line for the prompt; plan levels cleaned", async () => {
+  const { addSignal, getSignals, signalStats, signalMemory } = await import("../lib/journal.mjs");
+  const { cleanPlan, parseSignal } = await import("../lib/aitrade.mjs");
+  const s = mem(), base = { index: "BANKNIFTY", symbol: "X.NFO", name: "X", entry: 100, target: 110, stopLoss: 94, at: new Date().toISOString() };
+  await addSignal(s, { ...base, id: "s1", type: "CE", confidence: 80, outcome: "target" });
+  await addSignal(s, { ...base, id: "s1", type: "CE", confidence: 80, outcome: "target" });
+  await addSignal(s, { ...base, id: "s2", type: "PE", confidence: 60, outcome: "sl" });
+  await addSignal(s, { ...base, id: "s3", type: "CE", confidence: 75, outcome: "none" });
+  const l = await getSignals(s); assert.equal(l.length, 3, "deduped");
+  const st = signalStats(l); assert.equal(st.hi.n, 2); assert.equal(st.hi.target, 1); assert.equal(st.lo.sl, 1); assert.equal(st.all.hitRate, 33);
+  assert.match(signalMemory(l), /YOUR LAST 3 SIGNALS/); assert.match(signalMemory(l), /Confidence 70\+: 2 signals: target first 1/);
+  assert.match((await addSignal(s, { id: "x" })).error, /theek nahi/);
+  const P = { index: { spot: 52140 }, chain: { rows: [] } };
+  assert.deepEqual(cleanPlan({ above: 52250.4, below: 51990, note: "VWAP" }, P), { above: 52250, below: 51990, note: "VWAP" });
+  assert.equal(cleanPlan({ above: 51000, below: 52000 }, P), null, "above must be over below");
+  assert.equal(cleanPlan({ above: 60000, below: 51000 }, P), null, "too far from the spot");
+  assert.deepEqual(parseSignal(JSON.stringify({ signal: "WAIT", plan: { above: 52300, below: 52000 } }), P).plan, { above: 52300, below: 52000, note: "" });
+});
+
+test("weekly AI review: one Haiku call over the last 7 days, saved; needs trades and a key", async () => {
+  const { weekReview } = await import("../lib/journal.mjs");
+  const s = mem(), calls = [];
+  assert.match((await weekReview(s, { apiKey: "" })).error, /Claude key/);
+  assert.match((await weekReview(s, { apiKey: "sk" })).error, /koi poora trade nahi/);
+  await addTrade({ trade: { ...T, at: new Date().toISOString() } }, { adminStore: s, apiKey: "", now: Date.now() });
+  const r = await weekReview(s, { apiKey: "sk", fetchImpl: claude({ summary: "Revenge trades ne nuksan kiya.", strengths: ["SL hamesha lagaya"], mistakes: ["2 baje ke baad trade"], rules: ["Loss ke baad 10 min ruko"] }, calls) });
+  assert.equal(r.status, 200); assert.equal(r.review.trades, 1); assert.deepEqual(r.review.rules, ["Loss ke baad 10 min ruko"]);
+  assert.match(calls[0].messages[0].content, /strict, experienced options trading coach/); assert.equal(calls[0].model, "claude-haiku-5-5");
+  assert.equal((await s.get("week-review")).summary, "Revenge trades ne nuksan kiya.");
+});

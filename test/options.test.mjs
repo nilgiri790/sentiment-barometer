@@ -176,3 +176,25 @@ test("search: 'NIFTY 50' / 'NIFTY 500' are index names, not option strikes", asy
   const K = { api_key: "k", access_token: "t", token_at: new Date().toISOString() };
   assert.deepEqual(await searchOptions("banknifty 99999 ce", K, mem(), net(), Date.now()), [], "no such strike -> normal search answers");
 });
+
+test("Zerodha SL orders: relay rules, placing a SELL SL, moving its trigger (trailing), re-pricing after trigger", async () => {
+  const base = { exchange: "NFO", tradingsymbol: "BANKNIFTY26NOV52000CE", transaction_type: "SELL", order_type: "SL", product: "MIS", quantity: 35 };
+  assert.equal(validOrder({ ...base, price: 90.2, trigger_price: 93 }), null);
+  assert.match(validOrder({ ...base, price: 94, trigger_price: 93 }), /limit <= trigger/);
+  assert.match(validOrder({ ...base, price: 90 }), /trigger price missing/);
+  const calls = [];
+  let r = await placeOrder({ ...BUY, side: "SELL", order_type: "SL", price: 90.23, trigger_price: 93.01, product: "MIS" }, SECRETS({ allow_fno: "yes" }), { fetchImpl: net({ held: 35, calls }), cache: mem(), now: Date.now() });
+  assert.equal(r.ok, true, JSON.stringify(r)); assert.equal(r.order.trigger_price, 93); assert.equal(r.order.price, 90.25);
+  const sent = new URLSearchParams(calls.find((c) => c.startsWith("POST https://api.kite.trade/orders/regular")).split(" ")[2]);
+  assert.equal(sent.get("order_type"), "SL"); assert.equal(sent.get("trigger_price"), "93");
+  const waiting = { order_id: "251106000001", status: "TRIGGER PENDING", transaction_type: "SELL", order_type: "SL", exchange: "NFO", tradingsymbol: "BANKNIFTY26NOV52000CE", price: 90.2, trigger_price: 93, quantity: 35 };
+  const fired = { ...waiting, order_id: "251106000002", status: "OPEN" };
+  const c2 = [], f = net({ hist: { [waiting.order_id]: [waiting], [fired.order_id]: [fired] }, calls: c2 }), S = SECRETS({ allow_fno: "yes" }), now = Date.now();
+  r = await changeOrder({ op: "modify", order_id: waiting.order_id, price: 97, trigger_price: 100 }, S, { fetchImpl: f, now });
+  assert.equal(r.ok, true, JSON.stringify(r)); assert.ok(c2.some((c) => c.includes("order_type=SL&price=97&trigger_price=100")), c2.join("\n"));
+  assert.match((await changeOrder({ op: "modify", order_id: waiting.order_id, price: 97 }, S, { fetchImpl: f, now })).error, /trigger nahi hua/);
+  assert.match((await changeOrder({ op: "modify", order_id: waiting.order_id, price: 101, trigger_price: 100 }, S, { fetchImpl: f, now })).error, /trigger se upar/);
+  r = await changeOrder({ op: "modify", order_id: fired.order_id, price: 91.5 }, S, { fetchImpl: f, now });
+  assert.equal(r.ok, true); assert.ok(c2.some((c) => c.includes(`${fired.order_id} order_type=LIMIT&price=91.5`)));
+  assert.equal((await changeOrder({ op: "modify", order_id: fired.order_id, price: 91, trigger_price: 95 }, S, { fetchImpl: f, now })).status, 409);
+});
