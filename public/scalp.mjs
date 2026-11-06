@@ -11,6 +11,9 @@ import { mountAI, AI_CSS } from "./scalpai.mjs";
 import { optionCharges } from "./charges.mjs";
 import { mountChain, CHAIN_CSS, INDICES, indexOfSymbol } from "./scalpchain.mjs";
 import { contractGreeks } from "./optanalytics.mjs";
+import { PaperBroker } from "./paperbroker.mjs";
+import { bracketResult } from "./tradestats.mjs";
+import { mountJournal, JOURNAL_CSS } from "./scalpjournal.mjs";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const f2 = (v) => (v == null || !Number.isFinite(+v) ? "–" : (+v).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
@@ -29,24 +32,32 @@ const EMPTY_OPT = `<div class="empty sp-empty">Neeche <b>option chain</b> mein k
 let H, root, chart = null, main = null, vol = null, plines = [];
 let target = null, tf = TFS[3], bars = [], ticks = [], ltp = null, bid = null, ask = null, depth = null, prevClose = null, lastCum = null;
 let ws = null, wsLive = false, retry = 0, subSet = new Set(), extraToks = [], ltpTimer = null, candleTimer = null, pollTimer = null, polling = false, pollN = 0;
-let ai = null, market = null, engine = null, ctx = null, limits = null, trading = null, confirming = false;
+let ai = null, market = null, journal = null, paper = null, engine = null, ctx = null, limits = null, trading = null, confirming = false;
 // index (BANK NIFTY / NIFTY) chart
 let IDX = "BANKNIFTY", ich = null, imain = null, ibars = [], iticks = [], ilines = [], ilineKey = "";
 try { const k = localStorage.getItem(KEY + "-index"); if (INDICES[k]) IDX = k; } catch {}
+// Paper (pretend money) or Asli (real orders): one switch for your trades and the AI's. Paper is the safe default.
+let TMODE = "paper";
+try { if (localStorage.getItem(KEY + "-mode") === "real") TMODE = "real"; } catch {}
+const ANYTIME = location.hostname === "localhost" && /[?&]anytime=1/.test(location.search);   // test hook
 // form: offsets are kept when the entry price changes (user's example: +10 target, -7 trigger, -6 SL limit)
 const F = { lots: 1, entry: null, target: null, trig: null, sl: null, chase: 30, product: "MIS", oneClick: false, off: { target: 10, trig: 7, sl: 6 }, offPct: { target: 10, trig: 7, sl: 6 }, unit: "pt", entryTouched: false };
 try { const s = JSON.parse(localStorage.getItem(KEY + "-form") || "null"); if (s) { Object.assign(F.off, s.off || {}); Object.assign(F.offPct, s.offPct || {}); F.unit = s.unit === "pct" ? "pct" : "pt"; F.chase = s.chase || 30; F.product = s.product === "NRML" ? "NRML" : "MIS"; } } catch {}
 
 export function mountScalp(el, helpers) {
   H = helpers; root = el;
-  if (!document.getElementById("sp-css")) document.head.insertAdjacentHTML("beforeend", `<style id="sp-css">${CSS}${AI_CSS}${CHAIN_CSS}</style>`);
+  if (!document.getElementById("sp-css")) document.head.insertAdjacentHTML("beforeend", `<style id="sp-css">${CSS}${AI_CSS}${CHAIN_CSS}${JOURNAL_CSS}</style>`);
   root.innerHTML = `
     <div class="page-head"><div><h1>Scalping</h1><p class="sub">BANK NIFTY / NIFTY: index aur option ka live chart, poori option chain, AI ka strike pick, aur ek click mein BUY + target + stop-loss.</p></div></div>
+    <div class="seg sp-tabs" id="sptabs"><button type="button" data-t="trade" class="on">📈 Trading</button><button type="button" data-t="sum">📒 Trade summary</button></div>
+    <div id="sptj" hidden></div>
+    <div id="sptrade">
     <section class="panel"><div class="panel-b">
       <div class="btbar">
         <div class="seg sp-idx" id="spidx">${Object.values(INDICES).map((x) => `<button type="button" data-i="${x.key}" class="${x.key === IDX ? "on" : ""}">${x.label}</button>`).join("")}</div>
         <label class="sp-exp"><span class="label">Expiry</span><select class="sel" id="spexp" aria-label="Expiry"></select></label>
         <div class="seg" id="sptf">${TFS.map((t) => `<button type="button" data-k="${t.k}" class="${t.k === tf.k ? "on" : ""}">${t.k}</button>`).join("")}</div>
+        <div class="seg sp-mode" id="spmode" title="Paper = nakli paise, Asli = asli orders"><button type="button" data-m="paper" class="${TMODE === "paper" ? "on" : ""}">📝 Paper</button><button type="button" data-m="real" class="${TMODE === "real" ? "on" : ""}">₹ Asli</button></div>
         <span class="sp-status"><span class="dot" id="spdot"></span><span id="spstat">Shuru ho raha hai…</span></span>
       </div>
       <div class="note" id="splock" hidden></div>
@@ -75,11 +86,20 @@ export function mountScalp(el, helpers) {
         <section class="panel" id="spplain" hidden><div class="panel-h"><h2>Simple order</h2><span class="right label">bina target/SL</span></div><div class="panel-b" id="spplainb"></div></section>
       </div>
     </div>
-    <footer>Scalping mein nuksan jaldi ho sakta hai. Stop-loss is page se chalta hai: page band = SL band. Ye investment advice nahi hai.</footer>`;
+    </div>
+    <footer>Scalping mein nuksan jaldi ho sakta hai. Stop-loss aur AI is page se chalte hain: page band = SL / AI band. Ye investment advice nahi hai.</footer>`;
   market = mountChain(root.querySelector("#spchain"), root.querySelector("#spchips"), {
     H, setTokens: (list) => setToks("chain", list), current: () => target?.symbol, aiPick: () => ai?.pick(),
     onPick: (o) => pick(o), onLoaded: expiries, onSummary: indexLines });
-  ai = mountAI(root.querySelector("#spai"), { H, market, applyPick, state: () => ({ target, meta: metaP, ltp, bid, ask, depth, wsLive }) });
+  journal = mountJournal(root.querySelector("#sptj"), { H, onChange: () => ai?.draw() });
+  ai = mountAI(root.querySelector("#spai"), { H, market, applyPick, autoTrade, tradeMode: () => TMODE, today: () => journal.today(TMODE),
+    state: () => ({ target, meta: metaP, ltp, bid, ask, depth, wsLive, bracketLive: !!engine?.live }) });
+  journal.load();
+  root.querySelector("#sptabs").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; const sum = b.dataset.t === "sum";
+    root.querySelectorAll("#sptabs button").forEach((x) => x.classList.toggle("on", x === b)); root.querySelector("#sptj").hidden = !sum; root.querySelector("#sptrade").hidden = sum;
+    if (sum) journal.load(); };
+  root.querySelector("#spmode").onclick = (e) => { const b = e.target.closest("button"); if (b && b.dataset.m !== TMODE) setTradeMode(b.dataset.m); };
+  setInterval(watchdog, 1000);
   root.querySelector("#spidx").onclick = (e) => { const b = e.target.closest("button"); if (b && b.dataset.i !== IDX) setIndex(b.dataset.i); };
   root.querySelector("#spexp").onchange = (e) => market.setExpiry(e.target.value);
   root.querySelector("#sptf").onclick = (e) => { const b = e.target.closest("button"); if (!b || b.dataset.k === tf.k) return; tf = TFS.find((t) => t.k === b.dataset.k);
@@ -93,7 +113,50 @@ export function mountScalp(el, helpers) {
     market.reload(); if (!tf.live) loadIndexBars(true);
   }, 30000);
 }
-export function onShowScalp() { ai?.refresh(); market?.draw(); if (target) { orderPanel(); renderBracket(); } }
+export function onShowScalp() { ai?.refresh(); market?.draw(); journal?.load(); if (target) { orderPanel(); renderBracket(); plain(); } }
+
+// ---------- Paper / Asli ----------
+function setTradeMode(m) {
+  if (engine?.live) { H.toast("Trade chal raha hai. Paper / Asli uske baad badaliye."); return; }
+  if (ai?.isAuto()) { H.toast("Pehle AI Auto trade band kariye, phir Paper / Asli badaliye."); return; }
+  if (m === "real" && !confirm("ASLI mode: ab BUY + Target / SL se Zerodha par asli orders lagenge (aapke aur AI ke).\n\nPehle Paper mein kuch din practice behtar hai. Asli mode chalu karein?")) return;
+  TMODE = m; try { localStorage.setItem(KEY + "-mode", m); } catch {}
+  root.querySelectorAll("#spmode button").forEach((x) => x.classList.toggle("on", x.dataset.m === m));
+  H.toast(m === "real" ? "Asli mode: orders Zerodha par jaayenge." : "Paper mode: koi asli order nahi, nakli paise se practice.");
+  orderPanel(); plain(); ai?.draw();
+}
+
+// ---------- AI auto trade: the AI opens its strike and starts the bracket itself, within your limits ----------
+function tradeWindow(now = Date.now()) {                     // no NEW AI trade after 15:00 (and not in the first 5 minutes)
+  if (ANYTIME) return true;
+  const d = new Date(now + IST * 1000), m = d.getUTCHours() * 60 + d.getUTCMinutes();
+  return m >= 560 && m < 900;
+}
+async function autoTrade(r) {
+  const A = ai.autoSettings(), t = journal.today(TMODE);
+  if (r.signal === "WAIT" || !r.entry) return { ok: false, msg: "AI ne WAIT kaha: trade nahi kiya" };
+  if (engine?.live) return { ok: false, msg: "Pehla trade abhi chal raha hai" };
+  if (!tradeWindow()) { const d = new Date(Date.now() + IST * 1000), late = d.getUTCHours() >= 15;
+    return { ok: false, msg: late ? "3:00 baje ke baad naya AI trade nahi" : "9:20 se pehle naya AI trade nahi", stop: late }; }
+  if (t.trades >= A.maxTrades) return { ok: false, msg: `Aaj ki AI trade limit (${A.maxTrades}) poori`, stop: true };
+  if (t.net <= -A.maxLoss) return { ok: false, msg: `Aaj ka max nuksan ₹${A.maxLoss} pahunch gaya`, stop: true };
+  if (t.lastLossAt && Date.now() - t.lastLossAt < 5 * 60000) return { ok: false, msg: "Pichhla AI trade nuksan mein tha: 5 min ruk rahe hain" };
+  if (r.confidence < A.minConf) return { ok: false, msg: `Bharosa ${r.confidence}% hai, aapki shart ${A.minConf}%+: trade nahi kiya` };
+  if (TMODE === "real") { const w = why(); if (w) return { ok: false, msg: w.replace(/<[^>]+>/g, ""), stop: true }; }
+  const okPick = await applyPick({ symbol: r.symbol, name: r.name, lot: market.chain?.lot_size, entry: r.entry, target: r.target, stopLoss: r.stopLoss });
+  if (!okPick) return { ok: false, msg: "Strike nahi khula" };
+  F.lots = A.lots; orderPanel();
+  const err = planError(); if (err) return { ok: false, msg: "Plan theek nahi: " + err };
+  await startBracket({ source: "ai", auto: true, signal: r });
+  return engine?.live ? { ok: true, msg: `AI ne ${TMODE === "real" ? "ASLI" : "Paper"} trade shuru kiya: ${A.lots} lot ${r.name} @ ${f2(r.entry)}` } : { ok: false, msg: engine?.reason || "Trade shuru nahi hua" };
+}
+// every second: AI entry not filled in 60 s -> cancel it; remember how far the price went for / against the trade
+function watchdog() {
+  if (!engine?.live || !ctx) return;
+  if (ctx.auto && engine.state === "entry_open" && Date.now() - ctx.startedAt > 60000 && !ctx.cancelAsked) {
+    ctx.cancelAsked = true; engine.log("60 sec mein entry nahi bhari: AI ne entry cancel ki"); engine.cancelEntry();
+  }
+}
 
 // ---------- BANK NIFTY / NIFTY ----------
 async function setIndex(key, first = false) {
@@ -207,7 +270,7 @@ async function loadMeta() {                                 // lot size + price 
   } catch (e) { metaP = null; H.toast("Option ki jaankari nahi aayi: " + e.message); }
 }
 function plain() {
-  const box = root.querySelector("#spplainb"); box.innerHTML = ""; root.querySelector("#spplain").hidden = !metaP;
+  const box = root.querySelector("#spplainb"); box.innerHTML = ""; root.querySelector("#spplain").hidden = !metaP || TMODE !== "real";
   if (metaP) mountTrade(box, { ...metaP, last: ltp ?? metaP.last });
 }
 
@@ -342,6 +405,8 @@ function onTick(t, polled = false) {
   if (main) { const before = bars.length, bar = applyTick(bars, ms, ltp, dv, tf.sec);
     if (bar) { if (!before) { main.setData(bars.map(pt)); vol.setData(bars.map(vpt)); } else { main.update(pt(bar)); vol.update(vpt(bar)); } } }
   header(); greeksRow(); drawDepth(); liveCalc(); pnlTick();
+  if (engine?.live && engine.filled && ctx) { ctx.hi = Math.max(ctx.hi ?? ltp, ltp); ctx.lo = Math.min(ctx.lo ?? ltp, ltp); }
+  paper?.tick(ltp);
   engine?.onTick(ltp);
 }
 function drawDepth() {
@@ -374,6 +439,7 @@ function plan() {
 }
 function why() {
   if (!H.isAdmin()) return `Order ke liye <a href="#/keys">API Keys</a> mein login kariye.`;
+  if (TMODE === "paper") return target?.lot ? null : "Is option ka lot size nahi mila.";
   const t = trading?.trading || {};
   if (!t.relay) return `Pehle <a href="#/keys">Order relay</a> setup kariye.`;
   if (!t.kite) return `Aaj <a href="#/keys">Login with Zerodha</a> nahi hua.`;
@@ -404,7 +470,7 @@ function orderPanel() {
       <div class="sp-sum tnum" id="spsum"></div>
       <label class="switch" title="On karne par confirm nahi poochha jaayega"><input type="checkbox" id="sp1c" ${F.oneClick ? "checked" : ""}><span></span>One-click (bina confirm)</label>
       <div id="spconfirm"></div>
-      <button class="btn btn-buy sp-go" id="spgo" ${block ? "disabled" : ""}>BUY + Target / SL</button>
+      <button class="btn btn-buy sp-go" id="spgo" ${block ? "disabled" : ""}>BUY + Target / SL <small class="sp-gm">${TMODE === "real" ? "ASLI ORDER" : "PAPER"}</small></button>
       <div class="kres bad" id="sperr" hidden></div>
       <div class="sp-warn"><b>Dhyan dijiye:</b> Target Zerodha par laga rehta hai, lekin <b>SL trigger aur ${F.chase}s chase is page se chalte hain</b>. Trade ke dauraan ye tab khula rakhiye aur internet chalu rakhiye.</div>
     </div>`;
@@ -439,10 +505,7 @@ function calc() {
   $("spfollow").textContent = F.entryTouched ? "" : "live daam ke saath";
   const setPts = (id, v, s) => { const el = $(id); if (el && document.activeElement !== el) el.value = offsetOf(v, s) ?? ""; };
   setPts("offt", F.target, 1); setPts("offg", F.trig, -1); setPts("offs", F.sl, -1);
-  let err = checkPlan(p);
-  if (!err && limits && F.lots > limits.max_lots) err = `Ek order ki limit ${limits.max_lots} lot hai (API Keys mein badal sakte hain)`;
-  if (!err && limits && F.entry * q > limits.max_value) err = `Rakam ₹${Math.round(F.entry * q).toLocaleString("en-IN")} limit ₹${limits.max_value.toLocaleString("en-IN")} se zyada hai`;
-  if (!err && ltp && F.entry > ltp * 1.02) err = `Entry ${f2(F.entry)} abhi ke daam ${f2(ltp)} se kaafi upar hai. Turant mehenga bhar jaayega.`;
+  const err = planError();
   const val = F.entry * q, risk = F.sl > 0 ? (F.entry - F.sl) * q : null, rew = F.target > 0 ? (F.target - F.entry) * q : null;
   // Zerodha charges for the BUY + the SELL (at target; at the SL the sell is smaller, so STT a bit less)
   const exitPx = F.target > 0 ? F.target : F.sl > 0 ? F.sl : F.entry;
@@ -459,6 +522,14 @@ function calc() {
   saveForm(); drawLines();
   if (confirming) showConfirm();
 }
+function planError() {
+  const p = plan(), q = p.qty;
+  let err = checkPlan(p);
+  if (!err && TMODE === "real" && limits && F.lots > limits.max_lots) err = `Ek order ki limit ${limits.max_lots} lot hai (API Keys mein badal sakte hain)`;
+  if (!err && TMODE === "real" && limits && F.entry * q > limits.max_value) err = `Rakam ₹${Math.round(F.entry * q).toLocaleString("en-IN")} limit ₹${limits.max_value.toLocaleString("en-IN")} se zyada hai`;
+  if (!err && ltp && F.entry > ltp * 1.02) err = `Entry ${f2(F.entry)} abhi ke daam ${f2(ltp)} se kaafi upar hai. Turant mehenga bhar jaayega.`;
+  return err;
+}
 function liveCalc() {                                       // until you type an entry price yourself, it follows the live price
   const box = root.querySelector("#sporder"), inp = box.querySelector("#spentry");
   if (engine?.live || !inp || !ltp || F.entryTouched || confirming) return;
@@ -471,7 +542,7 @@ function liveCalc() {                                       // until you type an
 function showConfirm() {
   const c = root.querySelector("#spconfirm"); if (!c) return;
   const p = plan();
-  c.innerHTML = `<div class="sp-confirm"><b>Confirm kariye</b><div>BUY <b>${p.qty}</b> (${F.lots} lot) <b>${esc(target.name)}</b> @ <b>${f2(F.entry)}</b> LIMIT · ${F.product}</div>
+  c.innerHTML = `<div class="sp-confirm"><b>Confirm kariye · ${TMODE === "real" ? "ASLI ORDER (Zerodha)" : "PAPER TRADE (nakli paise)"}</b><div>BUY <b>${p.qty}</b> (${F.lots} lot) <b>${esc(target.name)}</b> @ <b>${f2(F.entry)}</b> LIMIT · ${F.product}</div>
     <div>${F.target ? `Bharne par Target SELL <b>${f2(F.target)}</b>` : "Target nahi"} · ${F.trig ? `Daam <b>${f2(F.trig)}</b> chhuye to SL SELL <b>${f2(F.sl)}</b>, ${F.chase}s mein na bhare to abhi ke daam par` : "SL nahi"}</div>
     <div class="sp-cb"><button class="btn btn-buy sm" id="spyes">Haan, order bhejo</button><button class="btn2 sm" id="spno">Wapas</button></div></div>`;
   c.querySelector("#spyes").onclick = () => { confirming = false; c.innerHTML = ""; startBracket(); };
@@ -485,11 +556,16 @@ function go() {
 // ---------- the bracket ----------
 function actionsFor(c) {
   const quiet = (e) => /khula nahi/.test(e.message);       // order already finished: not an error, polling shows the final state
+  if (c.mode === "paper") {                                 // pretend broker: fills on live ticks, no order leaves this page
+    paper = new PaperBroker({ ltp: () => ltp, onUpdate: (u) => engine?.onOrder(u) });
+    return { place: (o) => paper.place(o), cancel: async (id) => { try { await paper.cancel(id); } catch (e) { if (!quiet(e)) throw e; } }, modify: async (id, ch) => { try { await paper.modify(id, ch); } catch (e) { if (!quiet(e)) throw e; } } };
+  }
+  paper = null;
   return {
     place: async ({ side, price, qty }) => {
       const lots = qty / c.lot;
       if (!Number.isInteger(lots) || lots < 1) throw new Error(`Qty ${qty} lot size ${c.lot} ka poora guna nahi`);
-      const d = await H.adminPost("order", { symbol: c.symbol, side, lots, order_type: "LIMIT", price, product: c.product, confirm: true });
+      const d = await H.adminPost("order", { symbol: c.symbol, side, lots, order_type: "LIMIT", price, product: c.product, confirm: true, ...(c.auto && side === "BUY" ? { auto: true } : {}) });
       setTimeout(pollOrders, 400);
       return d.order_id;
     },
@@ -499,19 +575,41 @@ function actionsFor(c) {
 }
 function makeEngine(c, json) {
   let was = null;
-  const opts = { onChange: (e) => { save(); renderBracket(); drawLines(); lockSearch(); if (e.live !== was) { was = e.live; orderPanel(); } } };
+  const opts = { onChange: (e) => {
+    if (e.filled && !c.filledAt) c.filledAt = Date.now();
+    if (!e.live && e.state !== "idle" && !c.journaled && engine === e) { c.journaled = true; journalTrade(e, c); }
+    save(); renderBracket(); drawLines(); lockSearch(); if (e.live !== was) { was = e.live; orderPanel(); }
+  } };
   return json ? Bracket.restore(json, actionsFor(c), opts) : new Bracket(plan(), actionsFor(c), opts);
 }
-async function startBracket() {
+async function startBracket({ source = "manual", auto = false, signal = null } = {}) {
   const err = checkPlan(plan()) || why(); if (err) return H.toast(err.replace(/<[^>]+>/g, ""));
-  ctx = { symbol: target.symbol, name: target.name, lot: target.lot, token: target.token, product: F.product };
+  const s = market.summary();
+  ctx = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, symbol: target.symbol, name: target.name, lot: target.lot, token: target.token, product: F.product,
+    mode: TMODE, source, auto, startedAt: Date.now(), index: IDX, type: /PE(\.NFO)?$/.test(target.symbol) ? "PE" : "CE", lots: F.lots,
+    signal: signal ? { confidence: signal.confidence, summary: signal.summary, reasons: (signal.reasons || []).slice(0, 5) } : null,
+    mkt: { spot: market.under.spot, pcr: s?.pcr ?? null, atmIv: s?.atmIv ?? null, maxPain: s?.maxPain ?? null, support: s?.support ?? null, resistance: s?.resistance ?? null } };
   try { engine = makeEngine(ctx); } catch (e) { return H.toast(e.message); }
-  orderPanel(); renderBracket(); startPolling();
+  orderPanel(); renderBracket(); if (ctx.mode !== "paper") startPolling();
   await engine.start();
   if (ltp) engine.onTick(ltp);
 }
+// a finished bracket -> one row in the Trade summary (the server works out charges, net P&L and the AI review)
+async function journalTrade(e, c) {
+  const r = bracketResult(e.toJSON());
+  if (!r) return;                                           // nothing was bought (entry cancelled / rejected)
+  const t = { id: c.id, at: new Date(c.filledAt || c.startedAt).toISOString(), closedAt: new Date().toISOString(), mode: c.mode, source: c.source, index: c.index,
+    symbol: c.symbol, name: c.name, type: c.type, qty: r.qty, lots: c.lots, entry: r.entry, exit: r.exit, exitReason: r.exitReason, chases: r.chases,
+    durationSec: c.filledAt ? Math.round((Date.now() - c.filledAt) / 1000) : 0,
+    mfe: c.hi != null ? Math.max(0, Math.round((c.hi - r.entry) * 100) / 100) : null, mae: c.lo != null ? Math.max(0, Math.round((r.entry - c.lo) * 100) / 100) : null,
+    plan: { target: e.p.target, slTrigger: e.p.slTrigger, slLimit: e.p.slLimit, chaseSec: e.p.chaseSec }, signal: c.signal, ctx: c.mkt };
+  const saved = await journal.add(t);
+  if (saved?.net != null) H.toast(`${saved.net >= 0 ? "✅ Munafa" : "❌ Nuksan"} ${saved.net >= 0 ? "+" : "−"}₹${Math.abs(Math.round(saved.net))} (charges ke baad) · Trade summary mein wajah dekhiye`);
+  if (e.state === "error" && c.auto) ai?.stop("AI trade mein gadbad hui: AI band. Kite mein position check kariye.");
+}
 function startPolling() { clearInterval(pollTimer); pollTimer = setInterval(() => { pollN++; if (!wsLive || pollN % 2 === 0) pollOrders(); }, 2000); }
 async function pollOrders() {
+  if (ctx?.mode === "paper") return;
   if (!engine?.live) { if (engine && !engine.live) { clearInterval(pollTimer); orderPanel(); } return; }
   if (polling) return; polling = true;
   try {
@@ -524,7 +622,7 @@ async function pollOrders() {
 }
 function lockSearch() {                                    // while a bracket is live: no index / expiry / strike change
   const live = !!engine?.live, l = root.querySelector("#splock");
-  root.querySelectorAll("#spidx button").forEach((b) => (b.disabled = live)); root.querySelector("#spexp").disabled = live;
+  root.querySelectorAll("#spidx button, #spmode button").forEach((b) => (b.disabled = live)); root.querySelector("#spexp").disabled = live;
   l.hidden = !live;
   l.innerHTML = live ? `🔒 Bracket chal raha hai (${esc(ctx?.name)}), isliye index / expiry / strike badalna band hai.` : "";
 }
@@ -538,12 +636,18 @@ async function resume() {
   if (Date.now() - (s.at || 0) > 18 * 36e5) { try { localStorage.removeItem(KEY); } catch {} return false; }   // yesterday's trade: forget it
   ctx = s.ctx;
   try { engine = makeEngine(ctx, s.b); } catch { engine = null; return false; }
+  if (ctx.mode === "paper" && paper) {                      // the pretend broker forgets on reload: give it the bracket's open orders
+    const o = s.b.o || {}, open = (x) => x && /OPEN|PENDING|RECEIVED|MODIFIED/.test(x.status || "");
+    paper.adopt([open(o.entry) && { id: o.entry.id, side: "BUY", price: s.b.p.entry, qty: s.b.p.qty }, open(o.target) && { id: o.target.id, side: "SELL", price: o.target.price, qty: o.target.qty },
+      open(o.sl) && { id: o.sl.id, side: "SELL", price: o.sl.price, qty: o.sl.qty }].filter(Boolean));
+  }
   const key = indexOfSymbol(ctx.symbol) || IDX;             // setIndex refuses while a bracket is live, so set the index here
   IDX = key; root.querySelectorAll("#spidx button").forEach((x) => x.classList.toggle("on", x.dataset.i === key));
   root.querySelector("#spiname").textContent = INDICES[key].index;
   market.setIndex(key); loadIndexBars();
   await choose({ symbol: ctx.symbol, name: ctx.name, lot_size: ctx.lot, token: ctx.token, option: true }, true);
-  if (engine.live) { engine.log("Page dobara khula: bracket resume, Zerodha se orders check kar rahe hain"); H.toast("Pichhla bracket resume kiya. Orders Zerodha se check ho rahe hain."); startPolling(); pollOrders(); }
+  if (engine.live) { engine.log(ctx.mode === "paper" ? "Page dobara khula: paper trade resume" : "Page dobara khula: bracket resume, Zerodha se orders check kar rahe hain"); H.toast("Pichhla trade resume kiya."); if (ctx.mode !== "paper") { startPolling(); pollOrders(); } }
+  else if (!ctx.journaled && engine.state !== "idle") { ctx.journaled = true; journalTrade(engine, ctx); }
   renderBracket(); lockSearch();
   return true;
 }
@@ -554,7 +658,7 @@ function renderBracket() {
   box.hidden = false;
   const e = engine, st = e.state, tone = st === "done" ? "pos" : st === "error" ? "neg" : st === "stopped" ? "neu" : "live";
   const row = (label, o) => o ? `<tr><td>${label}</td><td class="r">${f2(o.price ?? e.p.entry)}</td><td class="r">${o.qty ?? e.p.qty}</td><td><span class="sp-ost ${/COMPLETE/.test(o.status) ? "pos" : /CANCEL|REJECT/.test(o.status) ? "neg" : ""}">${esc(o.status)}</span>${o.filled ? ` <small>${o.filled} bhara</small>` : ""}</td><td class="id">${esc(o.id)}</td></tr>` : "";
-  box.innerHTML = `<div class="panel-h"><h2>Bracket</h2><span class="right"><span class="sp-badge ${tone}">${esc(STATE_TXT[st] || st)}</span></span></div>
+  box.innerHTML = `<div class="panel-h"><h2>Bracket</h2><span class="pill ${ctx?.mode === "real" ? "p-pos" : "p-soon"}">${ctx?.mode === "real" ? "ASLI" : "PAPER"}</span>${ctx?.source === "ai" ? `<span class="pill p-opt">🤖 AI</span>` : ""}<span class="right"><span class="sp-badge ${tone}">${esc(STATE_TXT[st] || st)}</span></span></div>
     <div class="panel-b">
       <div class="sp-bsum tnum"><span>${esc(ctx?.name || "")}</span><span>Qty <b>${e.p.qty}</b></span><span>Entry <b>${f2(e.p.entry)}</b></span>${e.p.target != null ? `<span>T <b class="up">${f2(e.p.target)}</b></span>` : ""}${e.p.slTrigger != null ? `<span>Trig <b>${f2(e.p.slTrigger)}</b> → SL <b class="down">${f2(e.p.slLimit)}</b></span>` : ""}<span>Chase <b>${e.p.chaseSec}s</b></span><span id="sppnl"></span></div>
       ${e.reason && !e.live ? `<div class="${st === "error" ? "sp-err" : "sp-ok"}">${esc(e.reason)}${st === "error" ? ". Kite app mein turant orders/positions dekhiye." : ""}</div>` : ""}
@@ -572,7 +676,7 @@ function renderBracket() {
   b("spcx", () => e.cancelEntry());
   b("spexit", () => { if (F.oneClick || confirm("Poori position abhi ke daam par bechein?")) e.exitNow(); });
   b("spstop", () => { if (confirm("Managing band karein? Zerodha par jo orders lage hain wo waise hi rahenge, lekin SL/chase ab nahi chalega.")) { e.stop(); clearInterval(pollTimer); orderPanel(); } });
-  b("spnew", () => { engine = null; ctx = null; F.entryTouched = false; F.entry = null; save(); renderBracket(); lockSearch(); orderPanel(); drawLines(); market.draw(); });
+  b("spnew", () => { engine = null; ctx = null; paper = null; F.entryTouched = false; F.entry = null; save(); renderBracket(); lockSearch(); orderPanel(); drawLines(); market.draw(); });
 }
 
 function pnlTick() {                                       // running P&L on the open qty, updated every tick
@@ -589,7 +693,8 @@ const CSS = `
 .sp-left,.sp-right{display:grid;gap:14px;align-content:start;min-width:0}
 #spchart{height:360px;position:relative}#spichart{height:250px;position:relative}
 @media(max-width:760px){#spchart{height:280px}#spichart{height:200px}}
-.sp-idx button{font-weight:700;padding:0 14px}.sp-exp{display:inline-flex;align-items:center;gap:6px}.sp-exp .sel{height:30px;width:auto}
+.sp-idx button{font-weight:700;padding:0 14px}.sp-mode button{font-weight:700}.sp-mode button[data-m=real].on{background:var(--neg);color:#fff;box-shadow:none}
+.sp-gm{display:block;font-size:10px;font-weight:700;letter-spacing:.08em;opacity:.85}.sp-go{flex-direction:column;gap:0}.sp-exp{display:inline-flex;align-items:center;gap:6px}.sp-exp .sel{height:30px;width:auto}
 .sp-chipsb{padding:10px 14px 4px}
 .sp-empty{height:100%;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px;color:var(--muted)}
 .sp-ba{display:flex;gap:16px;flex-wrap:wrap;padding:8px 14px 0;font-size:12px;color:var(--muted)}.sp-ba b{color:var(--ink);font-weight:600}

@@ -221,8 +221,9 @@ input,select{font:inherit;color:var(--ink)}
 .sc .x:hover,.sc .x:focus-visible{opacity:1;color:#fff;background:var(--neg);border-color:var(--neg)}
 .cards{padding-top:8px;margin-top:-8px}
 .addbtn{width:100%;margin-top:10px}
-.toast2{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--raise);color:var(--ink);border:1px solid var(--line-2);box-shadow:var(--shadow);padding:10px 14px;border-radius:var(--r);font-size:13px;z-index:50;max-width:calc(100% - 32px);animation:tin .18s ease-out}
-@media(max-width:760px){.toast2{bottom:84px}.sc .x{opacity:1}}
+#toasts{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:50;display:flex;flex-direction:column;align-items:center;gap:8px;width:max-content;max-width:calc(100% - 32px);pointer-events:none}
+.toast2{background:var(--raise);color:var(--ink);border:1px solid var(--line-2);box-shadow:var(--shadow);padding:10px 14px;border-radius:var(--r);font-size:13px;max-width:100%;animation:tin .18s ease-out;pointer-events:auto}
+@media(max-width:760px){#toasts{bottom:84px}.sc .x{opacity:1}}
 .sc .name{font-weight:600;font-size:12px;letter-spacing:.03em;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .sc .num{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:6px 0 8px;font-variant-numeric:tabular-nums;line-height:1}
 .meter{position:relative;height:4px;border-radius:2px;background:var(--line)}
@@ -313,8 +314,8 @@ html.theming *,html.theming *::before{transition:none !important}
 .kgrid .kcard{margin:0}
 .kgrid:has(> .kcard:only-child){grid-template-columns:minmax(0,1fr)}
 .runres{font-size:12px;margin-top:10px;color:var(--text-2);font-variant-numeric:tabular-nums}
-.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--raise);color:var(--ink);border:1px solid var(--line-2);box-shadow:var(--shadow);padding:10px 14px;border-radius:var(--r);font-size:13px;z-index:50;max-width:calc(100% - 32px);animation:tin .18s ease-out}
-@keyframes tin{from{opacity:0;transform:translate(-50%,6px)}to{opacity:1;transform:translate(-50%,0)}}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--raise);color:var(--ink);border:1px solid var(--line-2);box-shadow:var(--shadow);padding:10px 14px;border-radius:var(--r);font-size:13px;max-width:100%;animation:tin .18s ease-out;pointer-events:auto}
+@keyframes tin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 
 /* ---- Modal / order ticket ---- */
 .modal-bg{position:fixed;inset:0;background:rgba(3,6,12,.62);display:flex;align-items:center;justify-content:center;padding:16px;z-index:30;animation:fade .15s ease-out}
@@ -463,7 +464,14 @@ const sign = v => (v > 0 ? "+" : "") + Math.round(v);
 const fmt = v => v == null ? "–" : v.toLocaleString("en-IN", {minimumFractionDigits: 2, maximumFractionDigits: 2});
 let DATA, cur, days = 3, isAdmin = false;
 function refreshAdmin(){ tradingState(true).then(st => { const a = !!st?.loggedIn; if (a !== isAdmin) { isAdmin = a; if (DATA) { render(); settingsPanel(); pickPanel(); } btMod?.onShowBacktest(); spMod?.onShowScalp(); } }); }
-function toast(msg){ const t = document.createElement("div"); t.className = "toast2"; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 3500); }
+// several messages at once stack upwards instead of covering each other
+function toast(msg){
+  let box = document.getElementById("toasts");
+  if (!box) { box = document.createElement("div"); box.id = "toasts"; document.body.appendChild(box); }
+  const t = document.createElement("div"); t.className = "toast2"; t.textContent = msg; box.appendChild(t);
+  while (box.children.length > 4) box.firstChild.remove();
+  setTimeout(() => t.remove(), 3500);
+}
 async function watch(body){
   const r = await fetch("/api/admin/watch", { method: "POST", credentials: "same-origin", cache: "no-store",
     headers: { "content-type": "application/json" }, body: JSON.stringify(body) });

@@ -256,3 +256,38 @@ Search fix (same day): "NIFTY 50 / 100 / 200 / 500 / NEXT 50" are index names, n
 matches no strike now falls through to the share / index search (before, "NIFTY 50" returned NIFTY options).
 Tested: 100 unit tests; browser scalp suite 62/62 (fake Kite WS with chain OI ticks + price control, fake NIFTY + BANKNIFTY
 options, fake Haiku strike pick, stateful fake order book) + all earlier suites pass.
+
+## AI trader modes, Paper trading, Trade summary (2026-11-06)
+User asked: simpler AI section, an "AI trade mode" where the AI trades by itself, and a separate trade summary with profit /
+loss, the reason, and the AI learning from losses. (This REPLACES the earlier "AI never places orders" decision, but only
+inside the limits below; Paper is the default.)
+- Top bar switch "📝 Paper | ₹ Asli" (localStorage `sb-scalp-mode`, default paper; Asli needs a confirm; locked while a
+  bracket runs). Paper = public/paperbroker.mjs (same place / cancel / modify as the relay; fills on live ticks: BUY when
+  price <= limit at min(limit, price), SELL when price >= limit at max(limit, price); no order leaves the page; restored
+  after reload from the bracket's saved orders). Simple order (real ticket) only shows in Asli mode.
+- AI panel (public/scalpai.mjs) = "AI trader": modes Band | Signal | Auto trade + "Abhi scan karo"; all settings behind
+  "⚙ Settings" (interval, daily AI call limit, auto-trade lots / max trades per day / max loss per day ₹ / min confidence %,
+  optional note to the AI); result card compact, reasons folded in "Kyon?". Signal = looks every N s and only tells (🔔).
+  Auto trade = looks every N s; on BUY_CE/BUY_PE with confidence >= minConf it opens the strike, fills the form (lots from
+  settings) and starts the bracket itself (scalp.mjs autoTrade). Guards: one trade at a time (no AI look while a trade
+  runs), 9:20-15:00 IST for new trades, today's AI trades < maxTrades, today's AI net > -maxLoss, 5 min pause after an AI
+  loss, Asli needs relay + Zerodha login + F&O. Entry not filled in 60 s -> cancelled. Limit / loss / error -> AI turns
+  itself off. Asli AI BUY orders carry `auto:true`; /api/admin/order then checks lib/journal.mjs autoGuard (Blobs admin
+  `auto-count` per IST day vs maxTrades, lots <= setting, today's REAL AI net from the journal vs maxLoss). Settings: Blobs
+  admin `ai-auto` {lots 1, maxTrades 5, maxLoss 1000, minConf 65}; GET /api/admin/ai-usage returns {usage, auto, today};
+  POST /api/admin/ai-auto {auto}.
+- Trade summary = second tab "📒 Trade summary" on the Scalping page (public/scalpjournal.mjs): filters Aaj / 7 din / Sab,
+  AI / Aapke, Paper / Asli; cards (net P&L after charges, trades, win %, avg win / loss, best / worst); "AI ne nuksan se
+  kya seekha" (lessons from losses); table, click a row for why it made / lost money, the lesson, plan, price move
+  (max for / against), money (gross, charges, net), market at entry, the AI's reasons. "Paper trades hatao" clears paper rows.
+  Every finished bracket (paper or real, AI or manual) is posted once (id) to POST /api/admin/journal {op:"add", trade}:
+  lib/journal.mjs cleanTrade works out gross / charges / net on the server (optionCharges), reviews it with ONE Haiku call
+  (counts toward the daily AI limit; JSON {reason, lesson, tag}) or a rule-based reason + lesson when no key / limit
+  reached; Blobs admin `journal` (last 300). public/tradestats.mjs = bracketResult (from Bracket.toJSON) + computeStats.
+- "Learning": aiTrade adds promptMemory(journal) to every trade prompt: last 30 closed trades (wins, win %, net, by CE/PE,
+  by confidence >= 70) + the last 6 loss lessons + 2 win lessons ("YOUR PAST TRADES ... do not repeat the same mistakes").
+  It is in-context memory, not model training.
+- Toasts now stack (#toasts container in index.html) instead of covering each other.
+- Tested: 110 unit tests (paper broker + engine, trade result / stats, journal clean / review / memory / guard, admin
+  endpoints); browser scalp suite 77/77 (Paper auto trade end-to-end on fake ticks, AI review, summary tab, lessons in the
+  next prompt, limits) + all earlier suites pass. NOT tested with real money / real Kite.
